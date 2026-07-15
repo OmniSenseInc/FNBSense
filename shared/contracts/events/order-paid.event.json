@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OrderPaid",
+  "description": "Diterbitkan oleh Ordering saat kasir mengonfirmasi order menjadi PAID. Consumer utama: Inventory (deduksi stok), Finance (catat penjualan), Printing (tiket/struk), Realtime (KDS).",
+  "type": "object",
+  "required": ["event_id", "event_type", "occurred_at", "tenant_id", "outlet_id", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "event_type": { "type": "string", "const": "order.paid" },
+    "occurred_at": { "type": "string", "format": "date-time", "description": "ISO-8601 UTC" },
+    "tenant_id": { "type": "string" },
+    "outlet_id": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "required": ["order_id", "confirmed_by", "totals", "items"],
+      "properties": {
+        "order_id": { "type": "string" },
+        "table_id": { "type": "string" },
+        "order_type": { "type": "string", "enum": ["dine_in", "takeaway"] },
+        "confirmed_by": { "type": "string", "description": "user_id kasir yang mengonfirmasi" },
+        "payment_method": { "type": "string", "enum": ["qris_static", "cash"] },
+        "totals": {
+          "type": "object",
+          "required": ["subtotal", "service_charge", "tax", "grand_total"],
+          "properties": {
+            "subtotal": { "type": "integer", "description": "dalam rupiah (integer, tanpa desimal)" },
+            "service_charge": { "type": "integer" },
+            "tax": { "type": "integer" },
+            "grand_total": { "type": "integer" }
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["product_id", "qty", "unit_price"],
+            "properties": {
+              "product_id": { "type": "string" },
+              "variant_id": { "type": "string" },
+              "qty": { "type": "integer", "minimum": 1 },
+              "unit_price": { "type": "integer" },
+              "addons": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "addon_id": { "type": "string" },
+                    "qty": { "type": "integer", "minimum": 1 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

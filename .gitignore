@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment
+.env
+.env.*.local
+*.env.local
+
+# Laravel
+/services/*/storage/*.key
+/services/*/storage/logs/*
+/services/*/storage/framework/cache/*
+/services/*/storage/framework/sessions/*
+/services/*/storage/framework/views/*
+/services/*/bootstrap/cache/*.php
+/services/*/public/storage
+
+# Build / cache
+dist/
+build/
+.cache/
+*.log
+
+# Docker
+docker-data/
+
+# Python (Hermes)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Claude Code (setting lokal, tidak di-commit)
+.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
