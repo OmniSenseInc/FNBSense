@@ -59,6 +59,16 @@ class AuthTest extends TestCase
         $this->assertNotNull($user->tenant_id);
         $this->assertSame(UserRole::Owner, $user->role);
         $this->assertTrue($user->is_active);
+
+        // Owner WAJIB langsung terikat outlet default — ini yang bikin service
+        // hilir (Ordering) bisa dipakai. outlet_id null = 403 di semua endpoint
+        // ber-outlet, jadi assertion ini menjaga kontrak lintas-service.
+        $this->assertNotNull($user->outlet_id, 'Owner baru harus punya outlet_id, bukan null.');
+        $this->assertDatabaseHas('outlets', [
+            'id' => $user->outlet_id,
+            'tenant_id' => $user->tenant_id,
+        ]);
+        $response->assertJsonPath('user.outlet_id', $user->outlet_id);
     }
 
     public function test_register_mengabaikan_role_dan_tenant_id_dari_input(): void

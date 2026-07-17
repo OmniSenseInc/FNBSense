@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\UserRole;
+use App\Models\Outlet;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -14,6 +15,9 @@ use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 
 class AuthController extends Controller
 {
+    /** Setiap tenant baru lahir dengan satu outlet ini — owner langsung terikat padanya. */
+    private const DEFAULT_OUTLET_NAME = 'Outlet Utama';
+
     /**
      * Registrasi tenant baru + user owner-nya, lalu kembalikan token.
      *
@@ -30,8 +34,11 @@ class AuthController extends Controller
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
-        // Tenant + owner dibuat atomik: kalau salah satu gagal, dua-duanya
-        // dibatalkan (tidak ada tenant tanpa owner, atau sebaliknya).
+        // Tenant + outlet default + owner dibuat atomik: kalau salah satu gagal,
+        // semuanya dibatalkan. Owner LANGSUNG terikat outlet default supaya
+        // service hilir (Ordering) yang men-scope per outlet bisa dipakai sejak
+        // menit pertama — tanpa ini owner.outlet_id null dan semua endpoint
+        // ber-outlet menolak 403.
         $user = DB::transaction(function () use ($validated) {
             $tenant = Tenant::create([
                 'name' => $validated['business_name'],
@@ -39,8 +46,15 @@ class AuthController extends Controller
                 'is_active' => true,
             ]);
 
+            $outlet = Outlet::create([
+                'tenant_id' => $tenant->id,
+                'name' => self::DEFAULT_OUTLET_NAME,
+                'is_active' => true,
+            ]);
+
             return User::create([
                 'tenant_id' => $tenant->id,
+                'outlet_id' => $outlet->id,
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'password' => $validated['password'],
