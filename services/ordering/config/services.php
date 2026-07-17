@@ -35,4 +35,13 @@ return [
         ],
     ],
 
+    // Service Catalog — sumber harga & ketersediaan produk. Ordering memanggil
+    // langsung ke port service-nya (bukan lewat gateway) untuk snapshot harga.
+    'catalog' => [
+        'base_url' => env('CATALOG_BASE_URL', 'http://127.0.0.1:8001'),
+        // Detik. Catalog lambat/mati -> order baru gagal cepat (503), bukan
+        // customer menggantung. Connect & response pakai batas yang sama.
+        'timeout' => (int) env('CATALOG_TIMEOUT', 3),
+    ],
+
 ];
