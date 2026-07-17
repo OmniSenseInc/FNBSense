@@ -1,0 +1,167 @@
+================================================================================
+  RANGKUMAN SERVICE FNBSense  —  IAM & CATALOG
+  Update: 2026-07-17
+================================================================================
+
+FNBSense = "OS cafe" multi-tenant (banyak cafe dalam satu sistem).
+Arsitektur: microservice — tiap fungsi jadi service terpisah, DB sendiri-sendiri.
+Sampai sekarang ada 2 service yang jadi: IAM dan Catalog.
+
+Istilah penting:
+  - Tenant  = satu cafe/bisnis. Semua data "dicap" milik tenant tertentu.
+  - JWT     = "KTP digital" (token) yang membuktikan siapa kamu, cafe mana,
+              dan jabatanmu. Diterbitkan IAM saat login.
+  - RS256   = cara tanda tangan token pakai sepasang kunci:
+              PRIVATE key (rahasia, cuma IAM) buat menandatangani,
+              PUBLIC key (boleh dibagi) buat memverifikasi.
+
+
+================================================================================
+  SERVICE 1 — IAM  (Identity & Access Management)
+================================================================================
+
+TUJUAN
+  Gerbang identitas. Ngurus daftar akun, login, dan menerbitkan "KTP digital"
+  (token). Semua service lain percaya token dari IAM.
+
+KONFIGURASI
+  - Laravel 13, PHP 8.3+
+  - Database: MySQL "fnbsense_iam"
+  - Port: 8000
+  - Auth: JWT RS256 (IAM PEGANG private + public key)
+  - 2 jabatan (role): owner (pemilik cafe) & cashier (kasir)
+
+ENDPOINT
+  PUBLIK (dibatasi 6 request/menit, anti brute-force):
+    POST /api/auth/register  -> daftar cafe baru + akun owner sekaligus
+    POST /api/auth/login     -> masuk, dapat token
+
+  WAJIB TOKEN:
+    GET  /api/auth/me        -> lihat data diri (siapa saya)
+    POST /api/auth/logout    -> keluar (token diblacklist/dibatalkan)
+    POST /api/auth/refresh   -> perpanjang token
+
+ALUR SINGKAT
+    Register  -> IAM bikin tenant (cafe) + user owner -> kasih token
+    Login     -> IAM cek email+password -> kasih token berisi:
+                 { siapa (user id), cafe mana (tenant_id), jabatan (role) }
+
+KEAMANAN
+  - Password di-hash, gak pernah disimpan mentah.
+  - Token ditandatangani private key (gak bisa dipalsuin).
+  - Gagal login gak bocorin akun mana yang salah.
+  - Anti privilege escalation: role & tenant dipaksa server, bukan dari input.
+  - Catatan yang ditunda: services/iam/SECURITY_TODO.md
+
+STATUS: SELESAI + teruji (11 feature test). Sudah di-commit.
+
+
+================================================================================
+  SERVICE 2 — CATALOG  (Menu & Produk)
+================================================================================
+
+TUJUAN
+  "Otak menu" — sumber kebenaran APA YANG DIJUAL tiap cafe (kategori, produk,
+  harga). Dipakai: customer (lihat menu), Ordering (ambil produk buat pesanan),
+  dashboard owner (kelola menu).
+
+KONFIGURASI
+  - Laravel 13, PHP 8.3+
+  - Database: MySQL "fnbsense_catalog" (+ "fnbsense_catalog_test" buat test)
+  - Port: 8001
+  - Auth: JWT RS256 STATELESS -> Catalog CUMA punya PUBLIC key IAM.
+          Artinya: Catalog bisa MEMVERIFIKASI token, tapi TIDAK bisa
+          menerbitkan token, dan TIDAK pernah nanya ke IAM. Ringan & aman.
+  - Blacklist dimatikan (urusan logout ada di IAM).
+
+STRUKTUR DATA
+  Tabel "categories": id, tenant_id, name, sort_order, is_active
+  Tabel "products"  : id, tenant_id, category_id(->categories), name,
+                      description, price, is_available, image_url
+  Catatan: tenant_id = UUID penanda cafe (tanpa foreign key, karena beda DB
+  dari IAM). Foreign key cuma dipakai relasi internal (produk -> kategori).
+
+ENDPOINT
+  PUBLIK (tanpa login):
+    GET /api/ping                    -> cek service hidup
+    GET /api/menu?tenant=<id-cafe>   -> menu untuk customer
+                                        (cuma kategori aktif + produk tersedia)
+
+  KHUSUS OWNER (wajib token + role owner):
+    GET    /api/categories           -> daftar kategori
+    POST   /api/categories           -> tambah kategori
+    PUT    /api/categories/{id}      -> edit kategori
+    DELETE /api/categories/{id}      -> hapus kategori
+    GET    /api/products             -> daftar produk
+    POST   /api/products             -> tambah produk
+    PUT    /api/products/{id}        -> edit produk
+    DELETE /api/products/{id}        -> hapus produk
+
+ALUR KERJA
+
+  Alur A — Owner kelola menu:
+    1. Owner login di IAM -> dapat token (berisi cafe mana + jabatan owner)
+    2. Owner kirim "tambah produk Espresso 18rb" + token ke Catalog
+    3. Catalog verifikasi token pakai PUBLIC key IAM:
+         - token asli? (tanda tangan cocok)
+         - jabatannya owner? (kalau kasir -> DITOLAK 403)
+    4. Catalog simpan produk, otomatis dicap milik cafe si owner
+       (id cafe diambil dari TOKEN, bukan dari input -> gak bisa dipalsuin)
+
+  Alur B — Customer lihat menu (tanpa login):
+    1. Customer scan QR cafe A -> buka /api/menu?tenant=A
+    2. Catalog ambil kategori aktif + produk tersedia MILIK cafe A saja
+    3. Balikin daftar menu rapi (dikelompokkan per kategori)
+
+ATURAN EMAS (dijaga & teruji)
+  1. Isolasi antar-cafe: cafe A tak bisa lihat/ubah menu cafe B.
+     Akses data cafe lain dijawab "tidak ditemukan" (404).
+  2. Cap cafe diambil dari token, bukan input -> anti pemalsuan tenant.
+  3. Hanya owner yang boleh mengubah menu (kasir/customer ditolak).
+  4. Catalog tak pegang kunci rahasia -> cuma bisa verifikasi, aman.
+
+KEAMANAN DITUNDA (non-kritis): services/catalog/SECURITY_TODO.md
+  - Logout/blacklist IAM belum terlihat Catalog sampai token kedaluwarsa (60m).
+  - Menu publik belum ada rate limit (tambah sebelum go-live).
+  - Belum ada pagination di daftar kategori/produk.
+
+STATUS: kode SELESAI + 19 feature test lulus. Tabel menu masih KOSONG
+        (mesinnya siap, menu tinggal diisi). BELUM di-commit ke git.
+
+
+================================================================================
+  GAMBARAN HUBUNGAN ANTAR-SERVICE
+================================================================================
+
+        [ IAM :8000 ]                         [ CATALOG :8001 ]
+        pegang private+public key             pegang PUBLIC key saja
+              │                                       ▲
+              │ 1. login -> terbitkan token           │ 3. verifikasi token
+              ▼                                       │    (tanpa nanya IAM)
+        Owner/Customer  ─── 2. bawa token ────────────┘
+                            ke Catalog
+
+  Kunci desain: service hilir (Catalog, nanti Ordering, dll) cukup pegang
+  PUBLIC key buat memverifikasi token. Gak ada ketergantungan langsung ke IAM
+  saat runtime -> tiap service bisa jalan mandiri.
+
+
+================================================================================
+  BERIKUTNYA
+================================================================================
+  - Commit service Catalog ke git.
+  - Service Ordering (F2): konsumsi menu dari Catalog buat bikin pesanan
+    (alur: QR order -> QRIS statis -> verifikasi kasir -> status PAID).
+================================================================================
+
+Scan QR meja 5 → pesan
+      ↓
+Pesanan nongol di kasir (BELUM BAYAR, meja 5)
+      ↓
+Customer ke kasir: "meja 5"
+      ↓
+Kasir buka tab meja 5 → total (+ service charge + PPN)
+      ↓
+Customer bayar QRIS statis / cash → kasir sahkan → PAID ✅
+      ↓
+Tiket dapur + struk + potong stok + laporan
