@@ -29,19 +29,26 @@
 
 ## Invarian keuangan & pola menjaganya
 
-- **Aturan:** hanya status `PAID` yang memicu pengurangan stok dan pencatatan laporan. `PENDING/REPORTED/EXPIRED/CANCELLED` tidak berdampak.
+- **Aturan:** hanya status `PAID` yang memicu pengurangan stok dan pencatatan laporan. `PENDING/EXPIRED/CANCELLED` tidak berdampak.
 - **Owner status:** service **Ordering** adalah satu-satunya yang mengubah status order.
 - **Transactional Outbox:** saat kasir mengonfirmasi PAID, Ordering menulis perubahan status + baris outbox dalam satu transaksi lokal, lalu relay mem-publish `OrderPaid` ke RabbitMQ.
 - **Consumer idempotent:** Inventory & Finance memproses `OrderPaid` sekali saja (dedup by `order_id`). Order PAID tidak boleh diproses dua kali.
 - **Saga / kompensasi:** bila Inventory menemukan stok tak cukup, terbitkan event kegagalan + alert untuk koreksi manual. Uang sudah masuk → tidak ada rollback diam-diam atas PAID.
 
-## Alur transaksi (QRIS statis)
+## Alur transaksi (berbasis meja + pay-first — revisi final 2026-07-17)
 
 ```
-QR meja → Pesanan → Checkout (total+service+PPN, QRIS statis)
-   → Lapor bayar (PAYMENT_REPORTED) → Verifikasi kasir → PAID
+QR meja → Pesanan (dine-in/takeaway) → order masuk antrean kasir berlabel meja, status PENDING
+   → customer datang ke kasir, sebut "meja X" → kasir sebut total (subtotal+service+PPN)
+   → customer bayar (QRIS statis / cash) → kasir verifikasi uang masuk → PAID
    → [event OrderPaid] → Inventory (potong stok) + Finance (catat) + Printing (tiket/struk) + Realtime (KDS)
 ```
+
+Customer **tidak pernah** melapor sudah bayar: status `PAYMENT_REPORTED` dan self-report dihapus.
+QRIS statis bikin sistem tak tahu duit siapa yang masuk — model berbasis meja membunuh masalah itu di
+akar karena customer hadir fisik di depan kasir, jadi verifikasi jadi serial & tatap muka.
+**Pay-first**: dapur/stok/laporan hanya jalan setelah PAID; open-bill ditolak karena melanggar
+invarian keuangan. Detail state machine & skema: [ORDERING.md](ORDERING.md).
 
 ## Roadmap per fase
 
