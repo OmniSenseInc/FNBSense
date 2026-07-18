@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CashierOrderController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\TableController;
@@ -16,6 +17,15 @@ Route::middleware('throttle:60,1')->group(function () {
     Route::get('orders/{id}', [OrderController::class, 'show']);
 });
 Route::post('orders', [OrderController::class, 'store'])->middleware('throttle:orders');
+
+// Endpoint kasir — antrean & keputusan uang. role cashier ATAU owner (owner
+// boleh melakukan semua yang kasir bisa). Outlet diambil dari klaim token.
+Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
+    Route::get('cashier/orders', [CashierOrderController::class, 'index']);
+    Route::get('cashier/orders/{id}', [CashierOrderController::class, 'show']);
+    Route::post('cashier/orders/{id}/confirm-payment', [CashierOrderController::class, 'confirmPayment']);
+    Route::post('cashier/orders/{id}/cancel', [CashierOrderController::class, 'cancel']);
+});
 
 // Manajemen meja & tarif — owner saja (JWT terverifikasi + role:owner).
 // Outlet diambil dari klaim token; akun tanpa outlet ditolak 403 di base Controller.

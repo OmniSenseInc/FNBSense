@@ -37,4 +37,16 @@ abstract class Controller
 
         return $outletId;
     }
+
+    /**
+     * User (kasir/owner) yang melakukan aksi, dari klaim `sub` JWT.
+     *
+     * AuthenticateJwt menaruhnya di attribute `user_id`. Dipakai mengisi
+     * `confirmed_by` saat PAID — kontrak event mewajibkan jejak siapa yang
+     * mengonfirmasi. Selama route dipasangi 'jwt', nilainya dijamin ada.
+     */
+    protected function userId(Request $request): string
+    {
+        return $request->attributes->get('user_id');
+    }
 }
