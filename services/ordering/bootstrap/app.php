@@ -1,5 +1,7 @@
 <?php
 
+use App\Exceptions\CatalogUnavailableException;
+use App\Exceptions\ProductNotOrderableException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -34,5 +36,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // bukan 500 yang membocorkan stack trace ke klien.
         $exceptions->render(function (JWTException $e, Request $request) {
             return response()->json(['message' => 'Token tidak valid atau sudah kedaluwarsa.'], 401);
+        });
+
+        // Produk dipesan tapi tak ada di menu tenant (tak dikenal / tak tersedia /
+        // milik tenant lain) -> 422, bukan 500. Ini pertahanan skrutini #3.
+        $exceptions->render(function (ProductNotOrderableException $e, Request $request) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        });
+
+        // Catalog (sumber harga) tak bisa dihubungi -> 503 "menu sedang tak bisa
+        // diakses", bukan 500 yang membocorkan dependensi internal tumbang.
+        $exceptions->render(function (CatalogUnavailableException $e, Request $request) {
+            return response()->json(['message' => 'Menu sedang tidak dapat diakses. Coba lagi sebentar lagi.'], 503);
         });
     })->create();

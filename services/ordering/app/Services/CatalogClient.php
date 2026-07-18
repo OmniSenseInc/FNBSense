@@ -79,9 +79,20 @@ class CatalogClient
                     continue;
                 }
 
+                // Harga WAJIB numerik & non-negatif. Produk berharga null/kosong/
+                // negatif (data Catalog rusak / produk tanpa harga) sengaja TIDAK
+                // masuk peta -> secara struktural tak bisa dipesan (jadi 422 kalau
+                // diminta), bukan diam-diam jadi item Rp0. Menutup celah "item
+                // gratis" yang lolos DB CHECK (0 = 0*qty tetap valid). Satu baris
+                // rusak menghilangkan produk ITU saja, tak menumbangkan seluruh menu.
+                $price = $product['price'] ?? null;
+                if (! is_numeric($price) || $price < 0) {
+                    continue;
+                }
+
                 $products[$product['id']] = [
                     'name' => $product['name'] ?? '',
-                    'price' => $product['price'] ?? null,
+                    'price' => $price,
                 ];
             }
         }
