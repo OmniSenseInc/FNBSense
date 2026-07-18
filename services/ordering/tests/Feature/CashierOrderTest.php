@@ -12,10 +12,14 @@ use Tests\Concerns\MintsToken;
 use Tests\TestCase;
 
 /**
- * Endpoint kasir (langkah 8): antrean, confirm-payment idempoten, cancel.
+ * Endpoint kasir (langkah 8 & 10): antrean, confirm-payment idempoten, cancel.
  *
  * Fokus test: jalur uang tak boleh dobel (idempotensi), transisi status hanya
  * sah dari PENDING, dan isolasi outlet (404 untuk milik orang lain).
+ *
+ * Langkah 10 menambah pengunci yang belum tercakup langkah 8: isolasi endpoint
+ * show, isolasi lintas-TENANT (bukan hanya outlet) di semua aksi, dan transisi
+ * terminal cancel (CANCELLED/EXPIRED -> 409).
  */
 class CashierOrderTest extends TestCase
 {
@@ -299,5 +303,111 @@ class CashierOrderTest extends TestCase
     public function test_tanpa_token_ditolak_401(): void
     {
         $this->getJson('/api/cashier/orders')->assertUnauthorized();
+    }
+
+    // ---- Langkah 10: isolasi show ---------------------------------------
+
+    /** Show order sendiri: 200 + field internal (payment/tarif/confirmed) tampak. */
+    public function test_show_order_sendiri_menampilkan_field_internal(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Paid);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson("/api/cashier/orders/{$order->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $order->id)
+            ->assertJsonPath('data.grand_total', 23310)
+            ->assertJsonStructure(['data' => [
+                'id', 'grand_total', 'tax_percent', 'service_charge_percent',
+                'payment_method', 'confirmed_by', 'confirmed_at', 'items',
+            ]]);
+    }
+
+    /** Show order outlet lain (tenant sama) -> 404, tak bocor keberadaannya. */
+    public function test_show_order_outlet_lain_404(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Pending, $this->tenantId, (string) Str::uuid());
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson("/api/cashier/orders/{$order->id}")
+            ->assertNotFound();
+    }
+
+    /** Show order tenant lain -> 404. Scope wajib tenant DAN outlet. */
+    public function test_show_order_tenant_lain_404(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Pending, (string) Str::uuid(), (string) Str::uuid());
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson("/api/cashier/orders/{$order->id}")
+            ->assertNotFound();
+    }
+
+    // ---- Langkah 10: isolasi lintas-TENANT -------------------------------
+
+    /**
+     * Confirm-payment order tenant lain -> 404, tanpa outbox. Test langkah 8
+     * hanya menutup outlet lain (tenant sama); ini mengunci jalur tenant.
+     */
+    public function test_confirm_payment_order_tenant_lain_404(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Pending, (string) Str::uuid(), (string) Str::uuid());
+
+        $this->withHeaders($this->cashierHeaders())
+            ->postJson("/api/cashier/orders/{$order->id}/confirm-payment", ['payment_method' => 'cash'])
+            ->assertNotFound();
+
+        $this->assertSame(0, Outbox::count());
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'pending']);
+    }
+
+    // ---- Langkah 10: isolasi & transisi cancel ---------------------------
+
+    /** Cancel order outlet lain -> 404, order tak tersentuh. */
+    public function test_cancel_order_outlet_lain_404(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Pending, $this->tenantId, (string) Str::uuid());
+
+        $this->withHeaders($this->cashierHeaders())
+            ->postJson("/api/cashier/orders/{$order->id}/cancel", ['reason' => 'coba batalkan'])
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'pending']);
+    }
+
+    /** Cancel order tenant lain -> 404. */
+    public function test_cancel_order_tenant_lain_404(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Pending, (string) Str::uuid(), (string) Str::uuid());
+
+        $this->withHeaders($this->cashierHeaders())
+            ->postJson("/api/cashier/orders/{$order->id}/cancel", ['reason' => 'coba batalkan'])
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'pending']);
+    }
+
+    /** Cancel order yang sudah CANCELLED -> 409 (transisi terminal, tak berulang). */
+    public function test_cancel_order_cancelled_ditolak_409(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Cancelled);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->postJson("/api/cashier/orders/{$order->id}/cancel", ['reason' => 'batalkan lagi'])
+            ->assertStatus(409);
+
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'cancelled']);
+    }
+
+    /** Cancel order EXPIRED -> 409 (bukan PENDING, tak bisa dibatalkan). */
+    public function test_cancel_order_expired_ditolak_409(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Expired);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->postJson("/api/cashier/orders/{$order->id}/cancel", ['reason' => 'batalkan'])
+            ->assertStatus(409);
+
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'expired']);
     }
 }
