@@ -1,11 +1,11 @@
 ================================================================================
-  RANGKUMAN SERVICE FNBSense  —  IAM & CATALOG
-  Update: 2026-07-17
+  RANGKUMAN SERVICE FNBSense  —  IAM, CATALOG & ORDERING
+  Update: 2026-07-18
 ================================================================================
 
 FNBSense = "OS cafe" multi-tenant (banyak cafe dalam satu sistem).
 Arsitektur: microservice — tiap fungsi jadi service terpisah, DB sendiri-sendiri.
-Sampai sekarang ada 2 service yang jadi: IAM dan Catalog.
+Sampai sekarang ada 3 service yang jadi: IAM, Catalog, dan Ordering.
 
 Istilah penting:
   - Tenant  = satu cafe/bisnis. Semua data "dicap" milik tenant tertentu.
@@ -125,8 +125,90 @@ KEAMANAN DITUNDA (non-kritis): services/catalog/SECURITY_TODO.md
   - Menu publik belum ada rate limit (tambah sebelum go-live).
   - Belum ada pagination di daftar kategori/produk.
 
-STATUS: kode SELESAI + 19 feature test lulus. Tabel menu masih KOSONG
-        (mesinnya siap, menu tinggal diisi). BELUM di-commit ke git.
+STATUS: SELESAI + 19 feature test lulus. Sudah di-commit (46cee2f). Tabel menu
+        masih KOSONG (mesinnya siap, menu tinggal diisi).
+
+
+================================================================================
+  SERVICE 3 — ORDERING  (Pesanan & Kasir)
+================================================================================
+
+TUJUAN
+  "Mesin pesanan" — tempat pesanan lahir sampai dibayar. Customer scan QR meja,
+  pesan sendiri dari HP, lalu kasir yang mengesahkan pembayaran. Ordering yang
+  memegang kebenaran "sudah dibayar atau belum" dan menghitung total (harga +
+  service charge + PPN).
+
+KONFIGURASI
+  - Laravel 13, PHP 8.3+
+  - Database: MySQL "fnbsense_ordering" (+ "fnbsense_ordering_test" buat test)
+  - Port: 8002
+  - Auth: JWT RS256 STATELESS -> sama kayak Catalog, cuma pegang PUBLIC key IAM.
+          Endpoint customer TANPA login (dikenali dari QR meja, bukan token).
+  - Harga produk TIDAK disimpan sendiri -> selalu diambil dari Catalog saat pesan.
+
+ISTILAH KHUSUS SERVICE INI
+  - Outlet    = cabang/gerai satu cafe. Data pesanan dicap per outlet.
+  - qr_token  = kode acak di stiker QR tiap meja. Ini yang menentukan pesanan
+                masuk ke cafe & meja mana (customer nggak milih sendiri).
+  - PENDING   = pesanan sudah masuk, BELUM dibayar.
+  - PAID      = sudah dibayar & disahkan kasir. FINAL, tak bisa dibatalkan.
+  - Outbox    = "kotak surat keluar". Saat pesanan PAID, ditulis 1 surat event
+                buat dikirim ke service lain nanti (potong stok, catat laporan).
+
+STRUKTUR DATA (garis besar)
+  Tabel "tables"        : meja + qr_token (per outlet)
+  Tabel "order_settings": tarif PPN & service charge + batas waktu, per outlet
+  Tabel "orders"        : pesanan (status, total uang, siapa kasir yg sahkan)
+  Tabel "order_items"   : rincian item (nama & harga "difoto" saat pesan, biar
+                          struk lama tetap benar walau menu berubah nanti)
+  Tabel "outbox"        : antrean surat event "sudah dibayar"
+
+ENDPOINT
+
+  CUSTOMER (tanpa login, dibatasi rate limit):
+    GET  /api/t/{qr_token}          -> scan meja: ini cafe & meja mana
+    POST /api/orders                -> buat pesanan (kirim: meja, item, nama)
+    GET  /api/orders/{id}           -> cek status pesanan (buat nungguin)
+
+  KASIR / OWNER (wajib token + role cashier atau owner):
+    GET  /api/cashier/orders                       -> antrean pesanan masuk
+    GET  /api/cashier/orders/{id}
+    POST /api/cashier/orders/{id}/confirm-payment  -> sahkan LUNAS
+    POST /api/cashier/orders/{id}/cancel           -> batalkan
+
+  OWNER (kelola meja & tarif):
+    GET/POST/PUT/DELETE /api/tables  + /api/tables/{id}/rotate-qr (ganti QR)
+    GET/PUT /api/settings            -> atur tarif PPN, service charge, batas waktu
+
+ALUR PAY-FIRST (inti FNBSense)
+    1. Customer scan QR meja 5 -> HP-nya buka menu cafe itu.
+    2. Pilih item -> kirim. Ordering ambil HARGA dari Catalog (bukan dari HP
+       customer), hitung total + service charge + PPN. Status: PENDING.
+    3. Pesanan nongol di layar kasir.
+    4. Customer bayar (QRIS statis / cash) -> kasir klik "SUDAH BAYAR".
+    5. Status jadi PAID + 1 surat outbox ditulis (buat dapur/stok/laporan nanti).
+
+ATURAN EMAS (dijaga & teruji)
+  1. Harga & total SELALU dihitung server dari data Catalog. Harga yang dikirim
+     HP customer diabaikan -> mustahil "diskon sendiri".
+  2. LUNAS itu final. Sekali PAID tak bisa ditarik balik.
+  3. Anti bayar-dobel: tombol "sudah bayar" dipencet berapa kali pun tetap 1x
+     lunas & 1 surat outbox (idempotent). Ini pengaman uang paling penting.
+  4. Sahkan-LUNAS + tulis surat outbox = 1 paket: dua-duanya jadi, atau batal
+     dua-duanya. Tak mungkin ada pesanan lunas tanpa suratnya.
+  5. Isolasi antar-cafe/outlet: pesanan cafe lain dijawab "tidak ditemukan" (404).
+  6. Customer dikenali dari QR meja -> mustahil pesan ke cafe orang lain.
+
+CATATAN
+  - Pesanan PENDING yang tak pernah dibayar nanti otomatis jadi EXPIRED (satpam
+    terjadwal). Ini BELUM dibuat -> langkah berikutnya (L9).
+  - Surat outbox menumpuk dulu (belum dikirim). Pengirimnya ke antrean pusat
+    (RabbitMQ) dibuat nanti, saat service dapur/stok sudah ada.
+
+STATUS: Langkah 1-8 SELESAI + teruji & sudah di-commit (terakhir kasir: fa2b88b).
+        Test: kalkulator + endpoint customer + endpoint kasir (termasuk anti
+        bayar-dobel). Sisa: L9 (auto-expire) + L10 (test lanjutan) -> lalu kelar.
 
 
 ================================================================================
@@ -149,9 +231,12 @@ STATUS: kode SELESAI + 19 feature test lulus. Tabel menu masih KOSONG
 ================================================================================
   BERIKUTNYA
 ================================================================================
-  - Commit service Catalog ke git.
-  - Service Ordering (F2): konsumsi menu dari Catalog buat bikin pesanan
-    (alur: QR order -> QRIS statis -> verifikasi kasir -> status PAID).
+  - Ordering L9: "satpam" auto-expire (pesanan PENDING lewat batas waktu ->
+    otomatis jadi EXPIRED). Ringan: 1 command + 1 jadwal + 1 query.
+  - Ordering L10: test isolasi & anti bayar-dobel lanjutan -> lalu F2 KELAR.
+  - Push semua ke GitHub (sekarang commit masih lokal).
+  - Fase depan (F3+): pengirim outbox -> RabbitMQ, lalu Inventory (potong stok),
+    Finance (laporan), Realtime/Printing (layar dapur & struk).
 ================================================================================
 
 Scan QR meja 5 → pesan
