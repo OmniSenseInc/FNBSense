@@ -1,11 +1,11 @@
 ================================================================================
-  RANGKUMAN SERVICE FNBSense  —  IAM, CATALOG, ORDERING & REALTIME
+  RANGKUMAN SERVICE FNBSense  —  IAM, CATALOG, ORDERING, REALTIME & INVENTORY
   Update: 2026-07-19
 ================================================================================
 
 FNBSense = "OS cafe" multi-tenant (banyak cafe dalam satu sistem).
 Arsitektur: microservice — tiap fungsi jadi service terpisah, DB sendiri-sendiri.
-Sampai sekarang ada 4 service yang jadi: IAM, Catalog, Ordering, dan Realtime.
+Sampai sekarang ada 5 service: IAM, Catalog, Ordering, Realtime, dan Inventory.
 
 Istilah penting:
   - Tenant  = satu cafe/bisnis. Semua data "dicap" milik tenant tertentu.
@@ -259,14 +259,125 @@ ATURAN EMAS (dijaga)
   4. Kabar outlet A tak nyasar ke dapur outlet B (dipisah per outlet).
 
 BELUM DIBUAT (sengaja, catatan jujur)
-  - "Denyut" koneksi (heartbeat) belum ada -> koneksi dapur yang lama diam bisa
-    diputus jaringan tanpa ketahuan. Pengerasan prioritas #1.
   - Anti-dobel masih "ingatan sesaat" (hilang kalau service restart).
   - Layar dapur (frontend) belum dibuat -> baru mesin penyiarnya.
+  SUDAH DIKERASKAN:
+  - "Denyut" koneksi (heartbeat) SUDAH ada (commit 3897be1): server ping tiap
+    30 detik, koneksi dapur yang tak balas dianggap mati & diputus bersih.
 
 STATUS: F3a (pipa event) + F3b (layar KDS + auth) SELESAI & terbukti jalan
         end-to-end. Di-commit: a66f9a5, c2c599c, 5c7fd3c. Printing/struk (F3c)
         DITUNDA (layar KDS menggantikan tiket dapur untuk sekarang).
+
+
+================================================================================
+  SERVICE 5 — INVENTORY  (Stok Gudang & Bahan Baku)
+================================================================================
+
+TUJUAN
+  "Buku stok gudang". Nyatet sisa bahan baku tiap cabang (susu, kopi, gula, ...)
+  dan — nanti — memotongnya otomatis tiap ada pesanan LUNAS. Jadi owner tahu
+  bahan mana mau habis tanpa hitung manual.
+
+KENAPA SERVICE TERPISAH?
+  Stok itu urusan sendiri: angkanya berubah tiap transaksi, butuh kejujuran
+  angka (tak boleh bocor/dobel). Dipisah biar Ordering fokus ke uang, Inventory
+  fokus ke barang. Inventory "mendengar" kabar LUNAS dari pipa event yang sama
+  (RabbitMQ) — sama kayak layar dapur.
+
+KONFIGURASI
+  - Laravel 13, PHP 8.3+
+  - Database: MySQL "fnbsense_inventory" (+ "fnbsense_inventory_test" buat test)
+  - Port: 8003
+  - Auth: JWT RS256 STATELESS -> cuma pegang PUBLIC key IAM (verifikasi doang).
+          TAMBAHAN: token WAJIB bawa "cabang mana" (outlet_id) — kalau tidak,
+          ditolak. Stok selalu milik satu cabang, jadi tanpa itu tak masuk akal.
+
+ISTILAH KHUSUS SERVICE INI
+  - Bahan (ingredient) = barang mentah (susu, kopi). Daftarnya DIBIKIN di Catalog,
+                         bukan di sini (biar satu sumber, tak dobel-input).
+  - Resep (BOM)        = "1 Latte butuh 200ml susu + 18gr kopi". Juga di Catalog.
+  - Saldo stok         = sisa bahan sekarang di satu cabang.
+  - Buku gerakan (ledger) = catatan tiap stok naik/turun (+5000 belanja masuk,
+                         -200 kepakai). Saldo = hasil jumlah buku ini, bukan
+                         angka yang diketik bebas -> selalu bisa dilacak.
+  - Opname             = hitung stok fisik, cocokkan dengan sistem.
+
+STRUKTUR DATA
+  Tabel "stock_balances"  : saldo tiap bahan per cabang (sisa sekarang + batas
+                            minimum). Satu bahan cuma boleh 1 baris per cabang.
+  Tabel "stock_movements" : BUKU GERAKAN. Tiap perubahan = 1 baris (naik/turun,
+                            alasannya: belanja masuk / opname / kepakai pesanan).
+  Tabel "processed_orders": "buku absen" pesanan yang stoknya sudah dipotong ->
+                            pagar biar 1 pesanan tak dipotong dua kali.
+  Catatan: master bahan & resep TIDAK di sini -> Inventory nanya ke Catalog
+  lewat "kunci rahasia antar-service" (X-Service-Token), bukan token user.
+
+ENDPOINT
+  PUBLIK:
+    GET /api/ping                    -> cek service hidup
+
+  KHUSUS OWNER (wajib token + role owner + cabang):
+    GET  /api/stock                  -> lihat saldo stok cabang ini
+    POST /api/stock/restock          -> barang masuk (belanja) -> saldo naik
+    POST /api/stock/adjust           -> opname: input hasil hitung fisik ->
+                                        sistem catat selisihnya sendiri
+
+  BELUM DIBUAT (fase berikutnya):
+    (bukan endpoint, tapi "kuping") pendengar event "sudah dibayar" dari RabbitMQ
+    -> baca resep dari Catalog -> potong bahan otomatis.
+
+ALUR KERJA
+
+  Alur A — Barang masuk (belanja):
+    1. Owner belanja 5 liter susu -> input "restock susu +5000ml".
+    2. Inventory tambah saldo + tulis 1 baris buku gerakan (+5000, "belanja").
+    3. Bahan baru muncul otomatis pas pertama di-restock (tak perlu daftar ulang;
+       daftarnya sudah di Catalog).
+
+  Alur B — Opname (cocokkan fisik):
+    1. Owner hitung fisik: susu tinggal 4800ml (sistem kira 5000).
+    2. Input "counted_qty 4800" -> sistem catat selisih -200 di buku gerakan,
+       saldo dikoreksi jadi 4800. Kalau pas (tak ada selisih) -> buku tak dikotori.
+
+  Alur C — Potong otomatis (BELUM, fase F4b):
+    Pesanan LUNAS -> Inventory dengar dari RabbitMQ -> tanya Catalog "resepnya
+    apa?" -> potong tiap bahan sesuai resep x jumlah pesanan.
+
+ATURAN EMAS (yang sudah jadi, dijaga & teruji)
+  1. Saldo = hasil buku gerakan, BUKAN angka ketik bebas. Tiap perubahan
+     terekam -> bisa dilacak "kok sisanya segini, dari mana aja".
+  2. Cuma owner yang boleh kelola stok (kasir/customer ditolak).
+  3. Isolasi per cabang: stok cabang A tak tercampur cabang B. "Cabang mana"
+     diambil dari TOKEN, bukan input -> owner tak bisa nyentuh stok cabang lain.
+  4. Tiap perubahan = 1 paket utuh (saldo + buku gerakan jadi bareng, atau batal
+     bareng) + dikunci saat diubah -> dua belanja barengan tak saling menimpa.
+
+ATURAN EMAS (fase berikutnya, sudah dirancang)
+  5. Anti potong-dobel: 1 pesanan lunas cuma memotong stok SEKALI (dijaga "buku
+     absen" processed_orders), walau kabarnya datang dua kali.
+  6. Stok kurang tetap dipotong (saldo boleh minus) sebagai sinyal jujur "harus
+     restock" -> pesanan LUNAS TIDAK dibatalkan (uang sudah masuk, itu final).
+
+BELUM DIBUAT (sengaja, catatan jujur)
+  - Pendengar event "sudah dibayar" + potong stok otomatis (F4b) -> inti Inventory,
+    baru pondasinya yang jadi.
+  - Saga stok kurang / resep kosong (F4c).
+  - Validasi "bahan ini beneran ada di Catalog?" saat restock -> ditunda sampai
+    koneksi ke Catalog dipasang (F4b). Sekarang owner pilih dari daftar, jadi
+    risiko salah-ketik kecil.
+  - Frontend kelola stok belum dibuat -> baru mesinnya.
+
+CATATAN JUJUR (utang yang diakui)
+  - "Cabang mana" (outlet_id) belum bisa diisi IAM untuk akun owner -> sama
+    penghalang yang menahan Ordering. Inventory sudah dipasang PENJAGA: token
+    tanpa cabang langsung ditolak (gagal aman, bukan bocor diam-diam).
+
+STATUS: Pondasi (F4a) SELESAI + teruji. Scaffold + skema stok + auth (commit
+        dc6463f). Kelola stok manual owner — belanja masuk & opname — SELESAI &
+        teruji (10 test, saldo dibuktikan == jumlah buku gerakan). Potong-stok
+        otomatis dari event (F4b) BELUM. Resep & master bahan tinggal di Catalog
+        (endpoint /api/recipe sudah siap, commit aa7e3fe).
 
 
 ================================================================================
@@ -289,11 +400,12 @@ STATUS: F3a (pipa event) + F3b (layar KDS + auth) SELESAI & terbukti jalan
 ================================================================================
   BERIKUTNYA
 ================================================================================
-  - Realtime: "denyut" heartbeat WebSocket (pengerasan prioritas #1) + frontend
-    layar KDS yang nyambung ke penyiar.
+  - Inventory F4b: pasang "kuping" pendengar event "sudah dibayar" -> baca resep
+    dari Catalog -> potong stok otomatis + idempoten (anti potong-dobel). Ini
+    inti Inventory; pondasinya (F4a) sudah jadi.
+  - Realtime: frontend layar KDS yang nyambung ke penyiar (heartbeat sudah jadi).
   - Push semua ke GitHub (sekarang commit masih lokal).
-  - Fase depan: Inventory (potong stok dari event "sudah dibayar"), Finance
-    (laporan), Notification. Printing/struk (F3c) ditunda.
+  - Fase lebih jauh: Finance (laporan), Notification. Printing/struk (F3c) ditunda.
 ================================================================================
 
 Scan QR meja 5 → pesan
