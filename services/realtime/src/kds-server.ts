@@ -8,13 +8,20 @@ import { verifyToken, type Claims } from './auth.js';
  * gagal. Koneksi dikelompokkan per outlet_id → broadcast HANYA ke outlet yang
  * cocok dengan event (isolasi; outlet_id UUID unik global = batas tenant).
  */
+/** Ping keepalive tiap interval ini; klien yang lewat 1 siklus tanpa pong di-terminate. */
+const HEARTBEAT_MS = 30_000;
+
 export class KdsServer {
   private readonly server: WebSocketServer;
   private readonly clientsByOutlet = new Map<string, Set<WebSocket>>();
+  /** Socket yang sudah balas pong sejak ping terakhir; false = dicurigai mati. */
+  private readonly alive = new WeakMap<WebSocket, boolean>();
+  private readonly heartbeat: NodeJS.Timeout;
 
   constructor(port: number) {
     this.server = new WebSocketServer({ port });
     this.server.on('connection', (socket, req) => this.onConnection(socket, req));
+    this.heartbeat = setInterval(() => this.pingAll(), HEARTBEAT_MS);
     console.log(`[kds] WebSocket listen di ws://localhost:${port} (auth: query ?token=<JWT>)`);
   }
 
@@ -29,14 +36,30 @@ export class KdsServer {
     }
 
     this.register(claims.outlet_id, socket);
+    this.alive.set(socket, true);
     console.log(
       `[kds] klien tersambung outlet=${claims.outlet_id} role=${claims.role} ` +
         `(total outlet ini: ${this.clientsByOutlet.get(claims.outlet_id)?.size})`,
     );
 
+    socket.on('pong', () => this.alive.set(socket, true));
     socket.on('close', () => this.unregister(claims.outlet_id, socket));
     socket.on('error', (err: Error) => console.error('[kds] socket error:', err.message));
     socket.send(JSON.stringify({ type: 'connected', outlet_id: claims.outlet_id }));
+  }
+
+  /** Terminate socket yang belum balas pong sejak siklus lalu; sisanya di-ping ulang. */
+  private pingAll(): void {
+    for (const clients of this.clientsByOutlet.values()) {
+      for (const socket of clients) {
+        if (this.alive.get(socket) === false) {
+          socket.terminate(); // memicu 'close' → unregister
+          continue;
+        }
+        this.alive.set(socket, false);
+        socket.ping();
+      }
+    }
   }
 
   private register(outletId: string, socket: WebSocket): void {
@@ -75,6 +98,7 @@ export class KdsServer {
   }
 
   close(): void {
+    clearInterval(this.heartbeat);
     this.server.close();
   }
 }

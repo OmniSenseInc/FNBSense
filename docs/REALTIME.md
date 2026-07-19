@@ -169,8 +169,10 @@ Modul: `src/auth.ts` (verifyToken), `src/kds-server.ts` (KdsServer: registry + b
 
 **Terbukti E2E (2026-07-19):** klien uji (token RS256 outlet o-demo) connect → publish `order.paid` ke exchange → server consume → broadcast diterima klien. Auth lolos (`connected`), isolasi outlet jalan.
 
+**Sudah dikeraskan:**
+- **Heartbeat ping/pong — SELESAI.** `KdsServer` ping tiap 30s (`HEARTBEAT_MS`); socket yang lewat 1 siklus tanpa pong di-`terminate()` (memicu `close` → unregister). Pola `ws` standar (`alive` WeakMap di-set `true` saat connect & tiap `pong`). Deteksi layar mati + jaga koneksi dari reap NAT/proxy. (Close abnormal 1006 saat uji background = artefak harness suspend, bukan bug.)
+
 **Utang F3b (belum, sengaja):**
-- **Heartbeat ping/pong belum ada.** Koneksi KDS idle seharian bisa di-reap NAT/proxy tanpa ping. Server WS produksi WAJIB heartbeat (deteksi layar mati + jaga koneksi). Prioritas #1 pengerasan F3b. (Catatan: close abnormal 1006 saat uji background = artefak harness suspend, bukan bug — tapi memperkuat perlunya heartbeat di produksi.)
 - Dedup `event_id` masih in-memory (warisan F3a) — hilang saat restart.
 - Belum ada test otomatis untuk KdsServer (auth reject, scoping per outlet) — E2E manual dulu.
 
