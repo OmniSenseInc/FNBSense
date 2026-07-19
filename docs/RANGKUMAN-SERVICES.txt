@@ -1,11 +1,11 @@
 ================================================================================
-  RANGKUMAN SERVICE FNBSense  —  IAM, CATALOG & ORDERING
-  Update: 2026-07-18
+  RANGKUMAN SERVICE FNBSense  —  IAM, CATALOG, ORDERING & REALTIME
+  Update: 2026-07-19
 ================================================================================
 
 FNBSense = "OS cafe" multi-tenant (banyak cafe dalam satu sistem).
 Arsitektur: microservice — tiap fungsi jadi service terpisah, DB sendiri-sendiri.
-Sampai sekarang ada 3 service yang jadi: IAM, Catalog, dan Ordering.
+Sampai sekarang ada 4 service yang jadi: IAM, Catalog, Ordering, dan Realtime.
 
 Istilah penting:
   - Tenant  = satu cafe/bisnis. Semua data "dicap" milik tenant tertentu.
@@ -201,14 +201,72 @@ ATURAN EMAS (dijaga & teruji)
   6. Customer dikenali dari QR meja -> mustahil pesan ke cafe orang lain.
 
 CATATAN
-  - Pesanan PENDING yang tak pernah dibayar nanti otomatis jadi EXPIRED (satpam
-    terjadwal). Ini BELUM dibuat -> langkah berikutnya (L9).
-  - Surat outbox menumpuk dulu (belum dikirim). Pengirimnya ke antrean pusat
-    (RabbitMQ) dibuat nanti, saat service dapur/stok sudah ada.
+  - Pesanan PENDING yang tak pernah dibayar otomatis jadi EXPIRED (satpam
+    terjadwal tiap menit). SUDAH dibuat (L9).
+  - Surat outbox sekarang SUDAH dikirim ke antrean pusat (RabbitMQ) oleh
+    "tukang pos" (relay). Lihat SERVICE 4 (Realtime) di bawah.
 
-STATUS: Langkah 1-8 SELESAI + teruji & sudah di-commit (terakhir kasir: fa2b88b).
-        Test: kalkulator + endpoint customer + endpoint kasir (termasuk anti
-        bayar-dobel). Sisa: L9 (auto-expire) + L10 (test lanjutan) -> lalu kelar.
+STATUS: SELESAI SEMUA (L1-L10) + teruji (80 test) & di-commit (terakhir: db0242b).
+        Kalkulator + endpoint customer + kasir (anti bayar-dobel) + auto-expire
+        + test isolasi. F2 (Ordering) KELAR.
+
+
+================================================================================
+  SERVICE 4 — REALTIME  (Pipa Event & Layar Dapur / KDS)  — service Node PERTAMA
+================================================================================
+
+TUJUAN
+  "Papan pengumuman dapur". Begitu pesanan LUNAS di Ordering, kabarnya harus
+  langsung sampai ke dapur (nanti juga ke stok & laporan). Realtime mengalirkan
+  kabar itu dan menampilkannya realtime di layar dapur (KDS = Kitchen Display
+  System).
+
+KENAPA NODE (BUKAN LARAVEL)?
+  Layar dapur nyambung terus seharian (koneksi "hidup" lama tapi sering diam).
+  Node enteng megang ribuan koneksi diam sekaligus; PHP boros buat model ini.
+  Ini service Node PERTAMA di FNBSense (lainnya PHP). Bahasa beda tetap nyambung
+  karena lewat "bahasa bersama": antrean RabbitMQ + token JWT, bukan lewat
+  bahasa pemrograman.
+
+KONFIGURASI
+  - Node + TypeScript
+  - Nyambung ke: RabbitMQ (antrean event) + verifikasi token JWT (PUBLIC key IAM)
+  - Port WebSocket: 8081
+  - TIDAK punya database sendiri (cuma penerus + penyiar kabar)
+
+DUA BAGIAN
+
+  BAGIAN A — "Tukang pos" (relay, ada di dalam service Ordering)
+    Perintah "outbox:relay" mengangkat surat dari kotak outbox -> kirim ke
+    kantor pos pusat (RabbitMQ). Ditandai "terkirim" HANYA kalau kantor pos
+    benar-benar menerima (biar tak ada surat hilang diam-diam).
+
+  BAGIAN B — "Penyiar dapur" (service Realtime/Node)
+    Ambil surat "sudah dibayar" dari RabbitMQ -> siarkan ke layar dapur yang
+    tersambung, HANYA ke dapur outlet yang benar.
+
+ALUR
+    Pesanan LUNAS (Ordering) -> surat outbox
+      -> tukang pos (relay) angkat -> RabbitMQ (kantor pos)
+      -> penyiar (Node) ambil -> broadcast ke layar dapur outlet itu (WebSocket)
+
+ATURAN EMAS (dijaga)
+  1. Tak ada surat hilang diam-diam: ditandai terkirim hanya setelah kantor pos
+     konfirmasi (kirim-minimal-sekali).
+  2. Anti dobel: surat sama sampai dua kali -> yang kedua dibuang (dikenali dari
+     nomor unik surat / event_id).
+  3. Layar dapur wajib bawa token sah buat nyambung (kalau tidak -> ditolak).
+  4. Kabar outlet A tak nyasar ke dapur outlet B (dipisah per outlet).
+
+BELUM DIBUAT (sengaja, catatan jujur)
+  - "Denyut" koneksi (heartbeat) belum ada -> koneksi dapur yang lama diam bisa
+    diputus jaringan tanpa ketahuan. Pengerasan prioritas #1.
+  - Anti-dobel masih "ingatan sesaat" (hilang kalau service restart).
+  - Layar dapur (frontend) belum dibuat -> baru mesin penyiarnya.
+
+STATUS: F3a (pipa event) + F3b (layar KDS + auth) SELESAI & terbukti jalan
+        end-to-end. Di-commit: a66f9a5, c2c599c, 5c7fd3c. Printing/struk (F3c)
+        DITUNDA (layar KDS menggantikan tiket dapur untuk sekarang).
 
 
 ================================================================================
@@ -231,12 +289,11 @@ STATUS: Langkah 1-8 SELESAI + teruji & sudah di-commit (terakhir kasir: fa2b88b)
 ================================================================================
   BERIKUTNYA
 ================================================================================
-  - Ordering L9: "satpam" auto-expire (pesanan PENDING lewat batas waktu ->
-    otomatis jadi EXPIRED). Ringan: 1 command + 1 jadwal + 1 query.
-  - Ordering L10: test isolasi & anti bayar-dobel lanjutan -> lalu F2 KELAR.
+  - Realtime: "denyut" heartbeat WebSocket (pengerasan prioritas #1) + frontend
+    layar KDS yang nyambung ke penyiar.
   - Push semua ke GitHub (sekarang commit masih lokal).
-  - Fase depan (F3+): pengirim outbox -> RabbitMQ, lalu Inventory (potong stok),
-    Finance (laporan), Realtime/Printing (layar dapur & struk).
+  - Fase depan: Inventory (potong stok dari event "sudah dibayar"), Finance
+    (laporan), Notification. Printing/struk (F3c) ditunda.
 ================================================================================
 
 Scan QR meja 5 → pesan
