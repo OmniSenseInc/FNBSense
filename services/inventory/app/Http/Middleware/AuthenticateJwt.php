@@ -28,8 +28,15 @@ class AuthenticateJwt
             throw new JWTException('Klaim tenant_id tidak ada pada token.');
         }
 
+        // Inventory men-scope stok per outlet: token tanpa outlet_id ditolak (fail-fast),
+        // jangan biarkan null merembes ke query/insert (TypeError + unique bocor krn NULL selalu beda).
+        $outletId = $payload->get('outlet_id');
+        if (empty($outletId)) {
+            throw new JWTException('Klaim outlet_id wajib untuk akses stok.');
+        }
+
         $request->attributes->set('tenant_id', $tenantId);
-        $request->attributes->set('outlet_id', $payload->get('outlet_id'));
+        $request->attributes->set('outlet_id', $outletId);
         $request->attributes->set('role', $payload->get('role'));
         $request->attributes->set('user_id', $payload->get('sub'));
 

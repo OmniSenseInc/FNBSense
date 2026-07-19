@@ -23,8 +23,10 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- MySQL (bukan SQLite): CHECK constraint via ALTER TABLE & lockForUpdate
+             harus jalan sungguhan agar test bergigi. -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_DATABASE" value="fnbsense_inventory_test"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
@@ -32,5 +34,12 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- JWT: test menandatangani token pakai PRIVATE key IAM (mensimulasikan
+             token asli dari IAM), app memverifikasi pakai PUBLIC key Inventory. -->
+        <env name="JWT_ALGO" value="RS256"/>
+        <env name="JWT_PRIVATE_KEY" value="file://C:/laragon/www/FNBSense/services/iam/storage/keys/jwt-private.pem"/>
+        <env name="JWT_PUBLIC_KEY" value="file://C:/laragon/www/FNBSense/services/inventory/storage/keys/jwt-public.pem"/>
+        <env name="JWT_PASSPHRASE" value=""/>
+        <env name="JWT_BLACKLIST_ENABLED" value="false"/>
     </php>
 </phpunit>
