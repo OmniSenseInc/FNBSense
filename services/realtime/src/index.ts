@@ -1,21 +1,20 @@
 import amqp from 'amqplib';
 import type { Channel, ConsumeMessage } from 'amqplib';
-import { connection, topology, PREFETCH } from './config.js';
+import { connection, topology, PREFETCH, ws as wsConfig } from './config.js';
+import { KdsServer } from './kds-server.js';
 
 /**
- * Service Realtime FNBSense — consumer bukti F3a.
+ * Service Realtime FNBSense (F3b).
  *
- * Tugas SEKARANG: buktikan pipa relay→broker→consumer hidup. Terima event
- * `order.paid`, buang duplikat (idempotensi), log, ACK. BELUM WebSocket, BELUM
- * verifikasi JWT — itu F3b. Menjalankan ini juga yang membuat queue
- * `realtime.orders` eksis & ter-bind, syarat agar relay tak kehilangan pesan.
+ * Consume event `order.paid` dari RabbitMQ → buang duplikat (idempotensi) →
+ * BROADCAST ke klien KDS (WebSocket) di outlet yang cocok. F3a membuktikan pipa
+ * hidup; F3b menaruh layar dapur di ujungnya.
  */
 
-// Dedup in-memory: at-least-once bisa mengirim ulang event yang sama; event_id
-// yang sudah diproses dibuang. CATATAN: hilang saat restart → F3b naikkan ke Redis.
+// Dedup in-memory: at-least-once bisa mengirim ulang. CATATAN: hilang saat
+// restart → utang teknis, naikkan ke Redis kalau butuh tahan-restart.
 const processedEventIds = new Set<string>();
 
-// Bentuk minimal amplop yang kita percayai sebelum memproses.
 interface EventEnvelope {
   event_id: string;
   event_type: string;
@@ -28,11 +27,11 @@ interface EventEnvelope {
 }
 
 async function start(): Promise<void> {
+  const kds = new KdsServer(wsConfig.port);
+
   const conn = await amqp.connect(connection);
   const channel = await conn.createChannel();
 
-  // Assert hanya yang service ini butuh. Exchange di-assert idempoten (relay pun
-  // meng-assert). Queue ini menunjuk DLX lewat x-dead-letter-exchange.
   await channel.assertExchange(topology.exchange, 'topic', { durable: true });
   await channel.assertQueue(topology.queue, {
     durable: true,
@@ -42,18 +41,17 @@ async function start(): Promise<void> {
   await channel.prefetch(PREFETCH);
 
   console.log(
-    `[realtime] siap — konsumsi queue "${topology.queue}" (routing key "${topology.routingKey}"). Menunggu event…`,
+    `[realtime] siap — konsumsi queue "${topology.queue}" (routing key "${topology.routingKey}").`,
   );
 
   await channel.consume(topology.queue, (msg) => {
     if (msg !== null) {
-      handleMessage(channel, msg);
+      handleMessage(channel, msg, kds);
     }
   });
 
-  installShutdown(conn, channel);
+  installShutdown(conn, channel, kds);
 
-  // Kalau koneksi putus, keluar dengan kode error → biar Supervisor/pm2 restart.
   conn.on('close', () => {
     console.error('[realtime] koneksi broker tertutup — keluar untuk di-restart.');
     process.exit(1);
@@ -61,7 +59,7 @@ async function start(): Promise<void> {
   conn.on('error', (err: Error) => console.error('[realtime] koneksi error:', err.message));
 }
 
-function handleMessage(channel: Channel, msg: ConsumeMessage): void {
+function handleMessage(channel: Channel, msg: ConsumeMessage, kds: KdsServer): void {
   let event: EventEnvelope;
   try {
     event = JSON.parse(msg.content.toString()) as EventEnvelope;
@@ -71,14 +69,13 @@ function handleMessage(channel: Channel, msg: ConsumeMessage): void {
     return;
   }
 
-  // Validasi bentuk: amplop rusak jangan bikin crash, buang ke DLQ.
-  if (!event.event_id || !event.event_type) {
-    console.error('[realtime] amplop tak valid (event_id/event_type hilang) → DLQ');
+  if (!event.event_id || !event.event_type || !event.outlet_id) {
+    console.error('[realtime] amplop tak valid (event_id/event_type/outlet_id hilang) → DLQ');
     channel.nack(msg, false, false);
     return;
   }
 
-  // Idempotensi: duplikat cukup di-ACK & abaikan.
+  // Idempotensi: duplikat cukup di-ACK & abaikan (jangan broadcast dua kali).
   if (processedEventIds.has(event.event_id)) {
     console.log(`[realtime] duplikat diabaikan (event_id=${event.event_id})`);
     channel.ack(msg);
@@ -87,18 +84,21 @@ function handleMessage(channel: Channel, msg: ConsumeMessage): void {
 
   const orderId = event.payload?.order_id ?? '?';
   const total = event.payload?.totals?.grand_total ?? '?';
+  const delivered = kds.broadcastToOutlet(event.outlet_id, event);
   console.log(
-    `[realtime] ${event.event_type} diterima — order=${orderId} total=Rp${total} (event_id=${event.event_id})`,
+    `[realtime] ${event.event_type} order=${orderId} total=Rp${total} → broadcast ke ${delivered} KDS ` +
+      `(outlet=${event.outlet_id}, event_id=${event.event_id})`,
   );
 
   processedEventIds.add(event.event_id);
   channel.ack(msg);
 }
 
-function installShutdown(conn: amqp.ChannelModel, channel: Channel): void {
+function installShutdown(conn: amqp.ChannelModel, channel: Channel, kds: KdsServer): void {
   const shutdown = async (): Promise<void> => {
     console.log('\n[realtime] shutdown…');
     try {
+      kds.close();
       await channel.close();
       await conn.close();
     } catch {

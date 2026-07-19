@@ -151,6 +151,29 @@ Ditulis eksplisit karena ini titik paling gampang salah:
    `confirm-payment` satu order → consumer nge-log `order.paid`. Matikan consumer, bayar lagi,
    nyalakan consumer → event tetap terkirim (backlog outbox tak hilang).
 
+## F3b — Server WebSocket KDS (SELESAI 2026-07-19)
+
+Consumer F3a dinaikkan jadi **server WebSocket**: event `order.paid` di-broadcast ke
+layar dapur (KDS) yang tersambung, di-scope per outlet.
+
+Keputusan (dikunci):
+| # | Keputusan | Alasan |
+|---|---|---|
+| 1 | Auth WS: **JWT di query** `?token=<JWT>`, verifikasi RS256 saat handshake, gagal → `close(4401)`. | Browser WebSocket API tak bisa set header Authorization. Verifikasi public-key-only, pola sama service Laravel — tak query IAM. |
+| 2 | Broadcast **di-scope per `outlet_id`**: klien dikelompokkan `Map<outlet_id, Set<socket>>`; event hanya ke klien outlet yang cocok. | `outlet_id` UUID unik global = batas tenant+outlet (pola terbukti Ordering). Isolasi realtime. |
+| 3 | Token tanpa `outlet_id` **ditolak** (owner belum terikat outlet). | KDS bekerja pada satu outlet konkret; sama seperti endpoint Ordering. |
+| 4 | Public key via **path relatif** `../ordering/storage/keys/jwt-public.pem`. | Lintas-OS — sekaligus melunasi utang path absolut Windows di sisi Node. |
+| 5 | Klien menerima `{type:"connected"}` saat handshake, lalu `{type:"order.paid", event}` per event. | Kontrak pesan sederhana untuk frontend KDS (F-frontend). |
+
+Modul: `src/auth.ts` (verifyToken), `src/kds-server.ts` (KdsServer: registry + broadcast), `src/index.ts` (consumer → `broadcastToOutlet`). Dep baru: `ws`, `jsonwebtoken`.
+
+**Terbukti E2E (2026-07-19):** klien uji (token RS256 outlet o-demo) connect → publish `order.paid` ke exchange → server consume → broadcast diterima klien. Auth lolos (`connected`), isolasi outlet jalan.
+
+**Utang F3b (belum, sengaja):**
+- **Heartbeat ping/pong belum ada.** Koneksi KDS idle seharian bisa di-reap NAT/proxy tanpa ping. Server WS produksi WAJIB heartbeat (deteksi layar mati + jaga koneksi). Prioritas #1 pengerasan F3b. (Catatan: close abnormal 1006 saat uji background = artefak harness suspend, bukan bug — tapi memperkuat perlunya heartbeat di produksi.)
+- Dedup `event_id` masih in-memory (warisan F3a) — hilang saat restart.
+- Belum ada test otomatis untuk KdsServer (auth reject, scoping per outlet) — E2E manual dulu.
+
 ## Catatan / utang teknis
 
 - **`JWT_PUBLIC_KEY` pakai path absolut Windows** (`file://C:/laragon/...`) di service Laravel —

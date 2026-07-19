@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Service Realtime FNBSense (F3) — consumer event RabbitMQ, cikal-bakal KDS WebSocket (F3b).",
+  "description": "Service Realtime FNBSense (F3) — consumer event RabbitMQ + server WebSocket KDS (F3b).",
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
@@ -11,11 +11,15 @@
   },
   "dependencies": {
     "amqplib": "^0.10.4",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.5",
+    "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
