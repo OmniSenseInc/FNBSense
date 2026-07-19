@@ -35,4 +35,7 @@ return [
         ],
     ],
 
+    // Shared-secret auth service-to-service (Inventory -> Catalog, endpoint /api/recipe).
+    'internal_token' => env('CATALOG_SERVICE_TOKEN'),
+
 ];

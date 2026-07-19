@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\RecipeController;
 use Illuminate\Support\Facades\Route;
 
 // Health check publik.
@@ -10,6 +12,10 @@ Route::get('ping', fn () => response()->json(['service' => 'catalog', 'status' =
 
 // Menu publik (customer & Ordering) — tenant via ?tenant=<uuid>.
 Route::get('menu', [MenuController::class, 'show']);
+
+// Resep batch untuk Inventory (service-to-service, auth X-Service-Token).
+// ?tenant=<uuid>&products=<uuid,uuid,...>
+Route::get('recipe', [RecipeController::class, 'batch'])->middleware('service');
 
 // Manajemen menu — owner saja (JWT terverifikasi + role:owner).
 Route::middleware(['jwt', 'role:owner'])->group(function () {
@@ -22,4 +28,14 @@ Route::middleware(['jwt', 'role:owner'])->group(function () {
     Route::post('products', [ProductController::class, 'store']);
     Route::put('products/{id}', [ProductController::class, 'update']);
     Route::delete('products/{id}', [ProductController::class, 'destroy']);
+
+    Route::get('ingredients', [IngredientController::class, 'index']);
+    Route::post('ingredients', [IngredientController::class, 'store']);
+    Route::put('ingredients/{id}', [IngredientController::class, 'update']);
+    Route::delete('ingredients/{id}', [IngredientController::class, 'destroy']);
+
+    Route::get('recipes', [RecipeController::class, 'index']);
+    Route::post('recipes', [RecipeController::class, 'store']);
+    Route::put('recipes/{id}', [RecipeController::class, 'update']);
+    Route::delete('recipes/{id}', [RecipeController::class, 'destroy']);
 });
