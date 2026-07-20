@@ -41,5 +41,8 @@
         <env name="JWT_PUBLIC_KEY" value="file://C:/laragon/www/FNBSense/services/inventory/storage/keys/jwt-public.pem"/>
         <env name="JWT_PASSPHRASE" value=""/>
         <env name="JWT_BLACKLIST_ENABLED" value="false"/>
+        <!-- Catalog di-fake via Http::fake di test; nilai ini cuma biar URL & token terbentuk. -->
+        <env name="CATALOG_BASE_URL" value="http://catalog.test"/>
+        <env name="CATALOG_SERVICE_TOKEN" value="test-secret-catalog"/>
     </php>
 </phpunit>

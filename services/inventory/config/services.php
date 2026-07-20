@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    // Catalog: sumber resep (BOM) buat potong stok (F4b). service_token dikirim
+    // sbg X-Service-Token dan HARUS sama dgn CATALOG_SERVICE_TOKEN di Catalog.
+    'catalog' => [
+        'base_url' => env('CATALOG_BASE_URL', 'http://127.0.0.1:8001'),
+        'timeout' => (int) env('CATALOG_TIMEOUT', 3),
+        'service_token' => env('CATALOG_SERVICE_TOKEN'),
+    ],
+
 ];
