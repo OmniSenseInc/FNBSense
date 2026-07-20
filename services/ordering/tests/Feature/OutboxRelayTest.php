@@ -26,6 +26,27 @@ class OutboxRelayTest extends TestCase
 
     private const EXCHANGE = 'fnbsense.events';
 
+    /** Nack handler yang dipasang relay ke channel — ditangkap supaya bisa dipicu manual. */
+    private $nackHandler;
+
+    /**
+     * Channel palsu. Relay memasang nack handler di constructor, jadi tiap mock
+     * harus mengizinkannya; sekalian ditangkap untuk meniru broker yang menolak.
+     *
+     * @return AMQPChannel&\Mockery\MockInterface
+     */
+    private function mockChannel()
+    {
+        $channel = Mockery::mock(AMQPChannel::class);
+        $channel->shouldReceive('set_nack_handler')
+            ->once()
+            ->andReturnUsing(function (callable $handler): void {
+                $this->nackHandler = $handler;
+            });
+
+        return $channel;
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */
@@ -53,7 +74,7 @@ class OutboxRelayTest extends TestCase
     {
         $row = $this->makeOutbox(['event_type' => 'order.paid']);
 
-        $channel = Mockery::mock(AMQPChannel::class);
+        $channel = $this->mockChannel();
         $channel->shouldReceive('basic_publish')
             ->once()
             ->with(Mockery::type(AMQPMessage::class), self::EXCHANGE, 'order.paid');
@@ -70,7 +91,7 @@ class OutboxRelayTest extends TestCase
         $row = $this->makeOutbox();
         $capturedBody = null;
 
-        $channel = Mockery::mock(AMQPChannel::class);
+        $channel = $this->mockChannel();
         $channel->shouldReceive('basic_publish')
             ->once()
             ->with(
@@ -95,7 +116,7 @@ class OutboxRelayTest extends TestCase
     {
         $row = $this->makeOutbox();
 
-        $channel = Mockery::mock(AMQPChannel::class);
+        $channel = $this->mockChannel();
         $channel->shouldReceive('basic_publish')->once();
         $channel->shouldReceive('wait_for_pending_acks')
             ->once()
@@ -111,11 +132,39 @@ class OutboxRelayTest extends TestCase
         $this->assertNull($row->fresh()->published_at);
     }
 
+    /**
+     * Broker MENOLAK (nack) event → baris TIDAK boleh ditandai terkirim.
+     * Tanpa set_nack_handler, php-amqplib membuang pesan ter-nack diam-diam dan
+     * wait_for_pending_acks() balik normal → order.paid hilang permanen tanpa jejak.
+     * (mutasi: hapus set_nack_handler di constructor OutboxRelay → test ini merah)
+     */
+    public function test_broker_nack_baris_tetap_null(): void
+    {
+        $row = $this->makeOutbox();
+
+        $channel = $this->mockChannel();
+        $channel->shouldReceive('basic_publish')->once();
+        // Tiru broker: yang datang saat menunggu confirm justru nack, yang di
+        // php-amqplib sungguhan berarti handler terpasang dipanggil.
+        $channel->shouldReceive('wait_for_pending_acks')
+            ->once()
+            ->andReturnUsing(fn () => ($this->nackHandler)(new AMQPMessage('x')));
+
+        try {
+            (new OutboxRelay($channel, self::EXCHANGE))->flushBatch(10);
+            $this->fail('nack broker harus melempar, bukan dianggap terkirim');
+        } catch (\RuntimeException) {
+            // diharapkan naik
+        }
+
+        $this->assertNull($row->fresh()->published_at); // dicoba lagi pass berikut
+    }
+
     public function test_baris_sudah_terkirim_tak_dikirim_ulang(): void
     {
         $this->makeOutbox(['published_at' => now()]);
 
-        $channel = Mockery::mock(AMQPChannel::class);
+        $channel = $this->mockChannel();
         $channel->shouldReceive('basic_publish')->never();
         $channel->shouldReceive('wait_for_pending_acks')->never();
 
@@ -130,7 +179,7 @@ class OutboxRelayTest extends TestCase
         $this->makeOutbox();
         $this->makeOutbox();
 
-        $channel = Mockery::mock(AMQPChannel::class);
+        $channel = $this->mockChannel();
         $channel->shouldReceive('basic_publish')->twice();
         $channel->shouldReceive('wait_for_pending_acks')->twice();
 

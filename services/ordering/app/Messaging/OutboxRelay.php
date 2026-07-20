@@ -7,6 +7,7 @@ namespace App\Messaging;
 use App\Models\Outbox;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Message\AMQPMessage;
+use RuntimeException;
 
 /**
  * Inti relay (F3a) — dipisah dari command supaya bisa diuji dengan channel palsu
@@ -24,7 +25,17 @@ class OutboxRelay
     public function __construct(
         private readonly AMQPChannel $channel,
         private readonly string $exchange,
-    ) {}
+    ) {
+        // WAJIB: tanpa handler ini php-amqplib membuang pesan ter-nack DIAM-DIAM
+        // (internal_ack_handler dipanggil dengan handler null) dan
+        // wait_for_pending_acks() balik seolah sukses → published_at terisi untuk
+        // event yang broker TOLAK. Akibatnya order.paid hilang permanen: stok tak
+        // terpotong, KDS tak dapat tiket, nol jejak di log. Jadikan exception supaya
+        // baris tetap null & dicoba lagi pass berikut.
+        $this->channel->set_nack_handler(static function (): void {
+            throw new RuntimeException('broker menolak (nack) event outbox — tak dianggap terkirim');
+        });
+    }
 
     /**
      * Angkat SATU batch baris belum-terkirim (tertua dulu) → publish → tandai.
