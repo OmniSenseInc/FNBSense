@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InventoryRecipeMissing",
+  "description": "Diterbitkan oleh Inventory saat produk pada order.paid tidak punya resep di Catalog. Produk itu DILEWATI (stok tak terpotong) dan order tetap di-ACK — menu laku tak boleh menumbangkan consumer hanya karena owner belum mengisi resep. Beda dari Catalog-unreachable, yang di-requeue. Consumer: F8 Notification (minta owner lengkapi resep).",
+  "type": "object",
+  "required": ["event_id", "event_type", "occurred_at", "tenant_id", "outlet_id", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "event_type": { "type": "string", "const": "inventory.recipe_missing" },
+    "occurred_at": { "type": "string", "format": "date-time", "description": "ISO-8601 UTC" },
+    "tenant_id": { "type": "string" },
+    "outlet_id": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "required": ["order_id", "product_ids"],
+      "properties": {
+        "order_id": { "type": "string" },
+        "product_ids": {
+          "type": "array",
+          "description": "Produk pada order ini yang resepnya kosong di Catalog; stoknya tidak terpotong.",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

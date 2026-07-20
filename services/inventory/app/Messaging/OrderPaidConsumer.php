@@ -13,6 +13,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Inti consumer order.paid (F4b) — dipisah dari command supaya bisa diuji tanpa
@@ -24,8 +25,13 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderPaidConsumer
 {
+    // Presisi kolom qty_on_hand / min_stock (decimal 14,3) — perbandingan ambang
+    // dibulatkan ke sini supaya galat float tak membalik keputusan tepat di batas.
+    private const QTY_SCALE = 3;
+
     public function __construct(
         private readonly CatalogRecipeClient $catalog,
+        private readonly EventPublisher $publisher,
     ) {}
 
     public function handle(array $envelope): ConsumeOutcome
@@ -59,7 +65,7 @@ class OrderPaidConsumer
 
         // 4. Potong dalam satu transaksi (potong + tandai processed = atomik).
         try {
-            $this->deduct($envelope, $recipes);
+            $result = $this->deduct($envelope, $recipes);
         } catch (UniqueConstraintViolationException $e) {
             // Race: consumer lain sudah menandai processed di sela cek dedup & commit.
             // Transaksi kita rollback penuh → tak ada potong dobel. Aman di-ACK.
@@ -71,24 +77,60 @@ class OrderPaidConsumer
             return ConsumeOutcome::Requeue;
         }
 
-        // F4c: terbitkan inventory.shortfall / inventory.recipe_missing di sini.
-        // F4b cukup: status tercatat di processed_orders + log (lihat deduct()).
+        // 5. Saga (F4c): terbitkan DI LUAR transaksi, setelah commit. Kegagalan
+        //    publish tak boleh menggagalkan potong yang sudah sah.
+        $this->publishSaga($envelope, $result);
+
         return ConsumeOutcome::Ack;
     }
 
     /**
+     * Terbitkan event saga hasil deduksi. Potong stok SUDAH commit di titik ini,
+     * jadi gagal publish → catat error & jalan terus: requeue percuma (bakal
+     * ke-dedup jadi ACK) dan melempar exception cuma menumbangkan daemon.
+     * Kondisinya tetap terbaca dari processed_orders + saldo, jadi tak hilang senyap.
+     *
+     * @param  array{status: string, shortfall: array<int, array<string, mixed>>, low_stock: array<int, array<string, mixed>>, unmapped: array<int, string>}  $result
+     */
+    private function publishSaga(array $envelope, array $result): void
+    {
+        $orderId = $envelope['payload']['order_id'];
+
+        $events = [];
+        if ($result['unmapped'] !== []) {
+            $events['inventory.recipe_missing'] = ['order_id' => $orderId, 'product_ids' => $result['unmapped']];
+        }
+        if ($result['shortfall'] !== []) {
+            $events['inventory.shortfall'] = ['order_id' => $orderId, 'items' => $result['shortfall']];
+        }
+        if ($result['low_stock'] !== []) {
+            $events['inventory.low_stock'] = ['order_id' => $orderId, 'items' => $result['low_stock']];
+        }
+
+        foreach ($events as $eventType => $payload) {
+            try {
+                $this->publisher->publish($eventType, $envelope['tenant_id'], $envelope['outlet_id'], $payload);
+            } catch (Throwable $e) {
+                Log::error("inventory.consume: gagal terbitkan {$eventType} order {$orderId}: {$e->getMessage()}");
+            }
+        }
+    }
+
+    /**
      * Potong saldo sesuai resep, tulis ledger, tandai processed — SATU transaksi.
+     * Balikkan detail untuk saga (F4c); event-nya diterbitkan setelah commit.
      *
      * @param  array<string, array<int, array{ingredient_id: string, qty_per_unit: mixed, unit: ?string}>>  $recipes
+     * @return array{status: string, shortfall: array<int, array<string, mixed>>, low_stock: array<int, array<string, mixed>>, unmapped: array<int, string>}
      */
-    private function deduct(array $envelope, array $recipes): void
+    private function deduct(array $envelope, array $recipes): array
     {
-        DB::transaction(function () use ($envelope, $recipes) {
+        return DB::transaction(function () use ($envelope, $recipes) {
             $tenantId = $envelope['tenant_id'];
             $outletId = $envelope['outlet_id'];
             $orderId = $envelope['payload']['order_id'];
 
-            $unmapped = false;
+            $unmapped = []; // product_id => true (kunci = anti-duplikat kalau produk sama 2x)
 
             // Agregasi kebutuhan per bahan lintas item (bahan sama di 2 item → 1 movement).
             $needed = []; // ingredient_id => total qty dipotong
@@ -97,7 +139,7 @@ class OrderPaidConsumer
 
                 // Produk tanpa resep dari Catalog → unmapped (#9): skip, JANGAN tumbangkan.
                 if (! isset($recipes[$productId])) {
-                    $unmapped = true;
+                    $unmapped[$productId] = true;
 
                     continue;
                 }
@@ -109,11 +151,23 @@ class OrderPaidConsumer
                 }
             }
 
-            $shortfall = false;
+            $anyNegative = false; // kondisi akhir → status baris processed_orders
+            $shortfall = [];      // yang BARU melintas ke minus → event
+            $lowStock = [];       // yang BARU melintas ambang min_stock → event
+
             foreach ($needed as $ingredientId => $qtyToDeduct) {
                 $balance = $this->lockOrNewBalance($tenantId, $outletId, $ingredientId);
+
+                // Dibulatkan ke presisi kolom (decimal 14,3) SEBELUM dibandingkan:
+                // qty_per_unit pecahan (0.1, 0.15) menumpuk galat float, dan tepat di
+                // ambang galat sekecil apa pun membalik hasil `<` / `<=` → alert meleset
+                // atau terbit palsu. Bandingkan pada presisi yang sama dengan yang disimpan.
+                $before = round((float) $balance->qty_on_hand, self::QTY_SCALE);
+                $minStock = round((float) $balance->min_stock, self::QTY_SCALE);
                 // Stok kurang → saldo BOLEH negatif (#7): sinyal jujur "utang stok".
-                $balance->qty_on_hand = (float) $balance->qty_on_hand - $qtyToDeduct;
+                $after = round($before - $qtyToDeduct, self::QTY_SCALE);
+
+                $balance->qty_on_hand = $after;
                 $balance->save();
 
                 StockMovement::create([
@@ -127,12 +181,34 @@ class OrderPaidConsumer
                     'created_by' => null, // dari event, bukan user
                 ]);
 
-                if ((float) $balance->qty_on_hand < 0) {
-                    $shortfall = true;
+                if ($after < 0) {
+                    $anyNegative = true;
+                }
+
+                // Event ditembakkan saat MELINTAS ambang, bukan saat BERADA di bawahnya.
+                // Sekali bahan jebol, order-order berikutnya tak meneriakkan bahan yang
+                // sama — kalau tidak, satu bahan habis = puluhan alert kembar dan owner
+                // mematikan notifikasinya. Cukup bandingkan before/after yang sudah di tangan.
+                if ($before >= 0 && $after < 0) {
+                    $shortfall[] = [
+                        'ingredient_id' => $ingredientId,
+                        'needed' => $qtyToDeduct,
+                        'on_hand_after' => $after,
+                    ];
+                } elseif ($minStock > 0 && $before > $minStock && $after <= $minStock) {
+                    // Hanya kalau owner sudah menetapkan ambang (default kolom 0 = diam),
+                    // dan tidak dobel dengan shortfall — minus sudah kabar yang lebih parah.
+                    $lowStock[] = [
+                        'ingredient_id' => $ingredientId,
+                        'on_hand_after' => $after,
+                        'min_stock' => $minStock,
+                    ];
                 }
             }
 
-            $status = $unmapped ? 'recipe_missing' : ($shortfall ? 'shortfall' : 'deducted');
+            // Status = KONDISI order ini (saldo berakhir minus?), bukan "baru melintas".
+            // Sengaja beda dari pemicu event: tabel mencatat keadaan, event mencatat kejadian.
+            $status = $unmapped !== [] ? 'recipe_missing' : ($anyNegative ? 'shortfall' : 'deducted');
 
             // Ditulis DI DALAM transaksi → unique(order_id) = pagar idempotensi.
             // Kalau bentrok (race), UniqueConstraintViolationException naik & seluruh
@@ -146,8 +222,15 @@ class OrderPaidConsumer
             ]);
 
             if ($status !== 'deducted') {
-                Log::warning("inventory.consume: order {$orderId} status={$status} (saga F4c).");
+                Log::warning("inventory.consume: order {$orderId} status={$status}.");
             }
+
+            return [
+                'status' => $status,
+                'shortfall' => $shortfall,
+                'low_stock' => $lowStock,
+                'unmapped' => array_keys($unmapped),
+            ];
         });
     }
 
@@ -164,6 +247,7 @@ class OrderPaidConsumer
             'outlet_id' => $outletId,
             'ingredient_id' => $ingredientId,
             'qty_on_hand' => 0,
+            'min_stock' => 0, // eksplisit: 0 = owner belum set ambang → low_stock diam
         ]);
     }
 

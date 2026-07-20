@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InventoryShortfall",
+  "description": "Diterbitkan oleh Inventory saat deduksi order.paid membuat saldo bahan MELINTAS dari >= 0 menjadi < 0 (baru jebol). Sengaja TIDAK terbit lagi selama saldo masih minus — satu kejadian, satu teriakan; kalau tidak, tiap order berikutnya menerbitkan ulang bahan yang sama. Saldo negatif dibiarkan jujur (uang sudah masuk, tak ada rollback). Consumer: F8 Notification (alert opname).",
+  "type": "object",
+  "required": ["event_id", "event_type", "occurred_at", "tenant_id", "outlet_id", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "event_type": { "type": "string", "const": "inventory.shortfall" },
+    "occurred_at": { "type": "string", "format": "date-time", "description": "ISO-8601 UTC" },
+    "tenant_id": { "type": "string" },
+    "outlet_id": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "required": ["order_id", "items"],
+      "properties": {
+        "order_id": { "type": "string", "description": "order.paid yang memicu jebolnya saldo" },
+        "items": {
+          "type": "array",
+          "description": "Hanya bahan yang BARU melintas ke negatif pada order ini, bukan semua bahan minus di outlet.",
+          "items": {
+            "type": "object",
+            "required": ["ingredient_id", "needed", "on_hand_after"],
+            "properties": {
+              "ingredient_id": { "type": "string", "description": "UUID milik Catalog (tanpa FK di Inventory)" },
+              "needed": { "type": "number", "description": "jumlah yang dipotong pada order ini (positif)" },
+              "on_hand_after": { "type": "number", "description": "saldo setelah potong; negatif = utang stok, perlu opname" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

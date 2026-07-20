@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InventoryLowStock",
+  "description": "Diterbitkan oleh Inventory saat deduksi order.paid membuat saldo bahan MELINTAS dari > min_stock menjadi <= min_stock. Peringatan dini (masih sempat belanja), lawan dari inventory.shortfall yang sudah telat. Hanya terbit kalau min_stock > 0 (owner sudah menetapkan batas) dan TIDAK terbit kalau saldo pada order yang sama sekaligus jebol ke negatif — shortfall sudah menyampaikan kabar yang lebih parah. Consumer: F8 Notification.",
+  "type": "object",
+  "required": ["event_id", "event_type", "occurred_at", "tenant_id", "outlet_id", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "event_type": { "type": "string", "const": "inventory.low_stock" },
+    "occurred_at": { "type": "string", "format": "date-time", "description": "ISO-8601 UTC" },
+    "tenant_id": { "type": "string" },
+    "outlet_id": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "required": ["order_id", "items"],
+      "properties": {
+        "order_id": { "type": "string" },
+        "items": {
+          "type": "array",
+          "description": "Hanya bahan yang BARU melintas ambang pada order ini.",
+          "items": {
+            "type": "object",
+            "required": ["ingredient_id", "on_hand_after", "min_stock"],
+            "properties": {
+              "ingredient_id": { "type": "string" },
+              "on_hand_after": { "type": "number" },
+              "min_stock": { "type": "number", "description": "ambang yang ditetapkan owner" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

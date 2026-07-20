@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Messaging\ConsumeOutcome;
+use App\Messaging\EventPublisher;
 use App\Messaging\EventTopology;
 use App\Messaging\OrderPaidConsumer;
 use App\Messaging\RabbitMqConnection;
@@ -56,6 +57,9 @@ class InventoryConsume extends Command
 
         $channel->close();
         $connection->close();
+        // Publisher punya koneksi sendiri (dibuka malas saat ada event saga) —
+        // consumer menutup miliknya saja tak cukup.
+        app(EventPublisher::class)->close();
 
         return self::SUCCESS;
     }

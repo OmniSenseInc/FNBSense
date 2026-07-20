@@ -33,6 +33,8 @@ memicu alert koreksi manual (saga). Inventory **consumer**, bukan sumber kebenar
 | 5 | **Idempotensi bisnis by `order_id`.** Tabel `processed_orders` `unique(order_id)`, di-insert di transaksi yang sama dengan potong stok. Order_id sudah ada → ACK & buang. | Satu order PAID hanya potong stok **sekali**, meski broker redeliver (at-least-once). Pagar di DB, bukan cuma kode. Tipe exception ditangkap **persis** ([[lessons-exception-type-specificity]]). |
 | 6 | **Stok = ledger.** `stock_movements` append-only (signed `qty_delta`, `reason`, `order_id`). Saldo `qty_on_hand` di `stock_balances` = materialized, `lockForUpdate` saat potong. | Jalur uang wajib auditable & bisa direkonstruksi. Restock/opname = movement juga. |
 | 7 | **Stok kurang → potong tetap jalan, saldo boleh negatif**, terbitkan `inventory.shortfall`. Tak clamp 0, tak rollback PAID. | Produk sudah terjual & dimasak → stok fisik memang berkurang. Negatif = sinyal jujur "utang stok, perlu opname". |
+| 7b | **(F4c) Event saga terbit saat MELINTAS ambang, bukan saat berada di bawahnya.** `shortfall` hanya kalau `before >= 0 && after < 0`; `low_stock` hanya kalau `min_stock > 0 && before > min_stock && after <= min_stock`. Saldo yang sudah minus tak diteriakkan ulang. | Tanpa ini, satu bahan habis = satu alert per order (puluhan kembar) → owner mematikan notifikasi & fitur jadi sampah. `before`/`after` sudah di tangan dalam transaksi yang sama → nol state, nol tabel throttle. Konsekuensi diterima: minus yang makin dalam tak teriak lagi; eskalasi = urusan F8. |
+| 7c | **(F4c) `processed_orders.status` tetap dari KONDISI akhir (`after < 0`), bukan dari melintas.** | Tabel mencatat keadaan order, event mencatat kejadian baru. Order kedua di bahan yang sudah minus tetap ber-status `shortfall` walau tak menerbitkan event. |
 | 8 | **Catalog unreachable saat konsumsi → `nack(requeue)`, JANGAN tandai processed** → retry saat Catalog up. Gagal berulang (N kali) → DLQ. | Ini mitigasi kelemahan opsi C: `PAID→stok` tetap terjaga, potong cuma **tertunda**, bukan hilang. Consumer yang ragu memilih retry, bukan tandai-selesai. |
 | 9 | **Produk tanpa resep di Catalog (resep kosong) → skip + `inventory.recipe_missing`, order tetap di-ACK & processed.** Beda dari Catalog-down (#8). | Menu laku tak boleh menumbangkan consumer karena owner belum isi resep. Pola [[lessons-external-price-boundary]]. "Catalog jawab tapi resep kosong" ≠ "Catalog tak menjawab". |
 | 10 | Resep **level `product_id` saja** dulu. `variant_id` & `addons` amplop **diabaikan** untuk deduksi (utang). | Catalog belum punya variant/addon. YAGNI. |
@@ -49,7 +51,7 @@ stock_balances                  ← saldo materialized per bahan per outlet
   outlet_id     uuid            (stok fisik per outlet)
   ingredient_id uuid            (milik Catalog, tanpa FK)
   qty_on_hand   decimal(14,3)   default 0
-  min_stock     decimal(14,3)   default 0   (low-stock; F8 Notification pakai nanti)
+  min_stock     decimal(14,3)   default 0   (ambang low-stock; DIPAKAI F4c — 0 = owner belum set → diam)
   timestamps
   unique(outlet_id, ingredient_id)
 
@@ -114,8 +116,10 @@ pegang private key IAM → mint JWT over-build. Naik ke service-JWT kalau perlu 
       Produk yang resepnya kosong dari Catalog → kumpulkan `unmapped`.
    c. `processed_orders.status` = `recipe_missing` (ada unmapped) / `shortfall` (ada negatif) /
       `deducted` (normal).
-5. **Commit.** Lalu di luar transaksi: `unmapped` → terbitkan `inventory.recipe_missing`;
-   `shortfall` → terbitkan `inventory.shortfall`. Log **warning** (minim PII). **ACK.**
+5. **Commit.** Lalu di luar transaksi: `unmapped` → `inventory.recipe_missing`; bahan yang
+   **baru** melintas ke minus → `inventory.shortfall`; yang **baru** melintas `min_stock` →
+   `inventory.low_stock` (#7b). Log **warning** (minim PII). Gagal publish → `Log::error` &
+   **tetap ACK**: potong sudah commit, requeue percuma (bakal ke-dedup). **ACK.**
 6. **Gagal transient DB** → rollback → `nack(requeue)`. Jangan tandai processed saat ragu.
 
 Baris `processed_orders` ditulis **di dalam** transaksi potong → commit atomik: potong sukses
@@ -126,6 +130,10 @@ Baris `processed_orders` ditulis **di dalam** transaksi potong → commit atomik
 - PAID → **tak ada rollback**. Potong tercatat penuh, saldo boleh negatif.
 - `inventory.shortfall` (amplop event baru): `order_id`, `outlet_id`,
   `[{ingredient_id, needed, on_hand_after}]` → dipantau/alert (F8; F4 cukup terbitkan + log).
+- `inventory.low_stock` — peringatan **dini** (masih sempat belanja), lawan dari `shortfall`
+  yang sudah telat. Tak terbit kalau bahan yang sama sekaligus jebol ke minus pada order itu:
+  `shortfall` sudah kabar yang lebih parah.
+- Skema ketiganya di `shared/contracts/events/inventory-*.event.json`.
 - Koreksi = restock/opname manual (movement `restock`/`manual_adjust`), bukan batalkan order.
 
 ## Skrutini keamanan (jalur uang → wajib)
@@ -147,7 +155,7 @@ Baris `processed_orders` ditulis **di dalam** transaksi potong → commit atomik
 | **F4-pre** | **(Catalog)** tabel `ingredients`+`recipes`, CRUD owner-only, endpoint `GET /api/recipe?products=`. | Owner input bahan+resep di Catalog; endpoint balikin resep batch; test scoping/IDOR hijau. |
 | **F4a** | Scaffold `services/inventory` (Laravel+MySQL) + auth RS256 + skema (3 tabel) + CRUD saldo/opname (restock, adjust) owner-only. | Migrasi jalan; owner bisa restock/opname via REST; movement tercatat; test scoping hijau. |
 | **F4b** | Consumer `inventory:consume` + `CatalogRecipeClient` (kirim `X-Service-Token`) + deduksi idempotent + `processed_orders`. | `order.paid` → saldo turun sesuai resep Catalog; replay tak dobel; Catalog-down → retry (bukan hilang); test bergigi (mutasi hapus unique/lock → merah). |
-| **F4c** | Saga: `inventory.shortfall` + `inventory.recipe_missing` (skema JSON di `shared/contracts/`); saldo negatif jujur; resep kosong tak menumbangkan. | Stok kurang → saldo negatif + event + ACK; resep kosong → skip + event + ACK. |
+| **F4c** | Saga: `inventory.shortfall` + `inventory.recipe_missing` + `inventory.low_stock` (skema JSON di `shared/contracts/`) via `EventPublisher`; terbit saat melintas ambang (#7b); saldo negatif jujur; resep kosong tak menumbangkan. | Stok kurang → saldo negatif + event + ACK; resep kosong → skip + event + ACK; lintas `min_stock` → peringatan dini; **jebol kedua kali di bahan sama → TAK terbit lagi**. |
 | **F4d** | Bukti E2E: `confirm-payment` → relay → consumer → saldo turun; matikan consumer, bayar lagi, nyalakan → backlog terproses tanpa dobel. | Potong sekali per order, idempoten lintas-restart. |
 
 ## Utang yang diakui sejak awal
@@ -155,6 +163,12 @@ Baris `processed_orders` ditulis **di dalam** transaksi potong → commit atomik
 - **Auth Inventory→Catalog** = shared-secret header (`X-Service-Token`) — pola baru di repo, biaya nyata opsi C.
 - **Catalog jadi dependensi runtime jalur uang** — dimitigasi nack/retry (#8), bukan dihilangkan.
 - **Variant/addon belum dipotong** (#10) — menyusul saat Catalog punya variant.
-- **`inventory.shortfall`/`inventory.recipe_missing`** belum ada di `shared/contracts/` — bikin di F4c.
+- ~~**`inventory.shortfall`/`inventory.recipe_missing`** belum ada di `shared/contracts/`~~ — **lunas F4c**, plus `inventory.low_stock`.
+- **Event saga publish langsung, bukan lewat outbox.** Crash tepat di sela commit & publish → alert
+  hilang (kondisinya masih terbaca dari `processed_orders` + saldo, jadi bisa direkonsiliasi query).
+  Sadar dipilih: outbox = +1 tabel +1 daemon untuk alert, bukan jalur uang. Naikkan kalau F8 butuh garansi kirim.
+- **Produk tanpa resep sebaiknya dicegah di hulu** — Catalog melarang produk tanpa resep diaktifkan.
+  `recipe_missing` tetap perlu sebagai jaring pengaman, tapi hulunya yang menutup lubang. Slice Catalog, belum dijadwal.
+- **Variant/addon** masih belum dipotong (#10).
 - **Alert nyata** ke owner = F8 Notification; F4 cukup terbitkan event + log.
 - **`JWT_PUBLIC_KEY` path** — reuse pola path relatif (utang Windows lintas-service) saat scaffold auth.
