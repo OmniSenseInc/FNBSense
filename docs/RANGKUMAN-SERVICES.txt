@@ -323,9 +323,9 @@ ENDPOINT
     POST /api/stock/adjust           -> opname: input hasil hitung fisik ->
                                         sistem catat selisihnya sendiri
 
-  BELUM DIBUAT (fase berikutnya):
-    (bukan endpoint, tapi "kuping") pendengar event "sudah dibayar" dari RabbitMQ
-    -> baca resep dari Catalog -> potong bahan otomatis.
+  BUKAN ENDPOINT (tapi "kuping" event — SUDAH JADI, F4b):
+    daemon "php artisan inventory:consume" -> dengar event "sudah dibayar" dari
+    RabbitMQ -> baca resep dari Catalog -> potong bahan otomatis.
 
 ALUR KERJA
 
@@ -340,9 +340,23 @@ ALUR KERJA
     2. Input "counted_qty 4800" -> sistem catat selisih -200 di buku gerakan,
        saldo dikoreksi jadi 4800. Kalau pas (tak ada selisih) -> buku tak dikotori.
 
-  Alur C — Potong otomatis (BELUM, fase F4b):
+  Alur C — Potong otomatis (SUDAH JADI & teruji E2E, F4b):
     Pesanan LUNAS -> Inventory dengar dari RabbitMQ -> tanya Catalog "resepnya
-    apa?" -> potong tiap bahan sesuai resep x jumlah pesanan.
+    apa?" -> potong tiap bahan sesuai resep x jumlah pesanan -> tulis buku gerakan
+    + tandai "sudah diproses". Kabar sama datang dua kali -> dibuang, tak dobel.
+
+    Kalau Catalog lagi MATI pas ada pesanan masuk: potongannya DITUNDA (kabarnya
+    dibalikin ke antrean), BUKAN hilang -> begitu Catalog hidup lagi, otomatis
+    diproses. (Terbukti live pas uji F4d: consumer nunggu Catalog dinyalakan dulu,
+    baru stok kepotong.) Uang sudah masuk, jadi stok tak boleh diam-diam lolos.
+
+  Alur D — Saga stok kurang / resep kosong (SUDAH JADI, F4c):
+    - Stok kurang -> tetap dipotong, saldo boleh MINUS (sinyal jujur "harus
+      restock") + tembak alarm "inventory.shortfall". Pesanan LUNAS tak batal.
+    - Bahan mau habis (lewat batas minimum) -> alarm dini "inventory.low_stock".
+    - Produk belum punya resep -> dilewati + alarm "inventory.recipe_missing",
+      consumer TAK ikut mati. Alarm cuma bunyi pas MELINTAS batas (bukan tiap
+      pesanan) -> owner tak dibanjiri notif kembar.
 
 ATURAN EMAS (yang sudah jadi, dijaga & teruji)
   1. Saldo = hasil buku gerakan, BUKAN angka ketik bebas. Tiap perubahan
@@ -353,31 +367,37 @@ ATURAN EMAS (yang sudah jadi, dijaga & teruji)
   4. Tiap perubahan = 1 paket utuh (saldo + buku gerakan jadi bareng, atau batal
      bareng) + dikunci saat diubah -> dua belanja barengan tak saling menimpa.
 
-ATURAN EMAS (fase berikutnya, sudah dirancang)
+ATURAN EMAS (F4b/F4c — sudah jadi, dijaga & teruji E2E)
   5. Anti potong-dobel: 1 pesanan lunas cuma memotong stok SEKALI (dijaga "buku
-     absen" processed_orders), walau kabarnya datang dua kali.
+     absen" processed_orders), walau kabarnya datang dua kali. (Terbukti F4d.)
   6. Stok kurang tetap dipotong (saldo boleh minus) sebagai sinyal jujur "harus
      restock" -> pesanan LUNAS TIDAK dibatalkan (uang sudah masuk, itu final).
 
 BELUM DIBUAT (sengaja, catatan jujur)
-  - Pendengar event "sudah dibayar" + potong stok otomatis (F4b) -> inti Inventory,
-    baru pondasinya yang jadi.
-  - Saga stok kurang / resep kosong (F4c).
-  - Validasi "bahan ini beneran ada di Catalog?" saat restock -> ditunda sampai
-    koneksi ke Catalog dipasang (F4b). Sekarang owner pilih dari daftar, jadi
-    risiko salah-ketik kecil.
-  - Frontend kelola stok belum dibuat -> baru mesinnya.
+  - Validasi "bahan ini beneran ada di Catalog?" saat restock -> masih ditunda.
+    Owner pilih dari daftar, jadi risiko salah-ketik kecil.
+  - Frontend kelola stok & layar alarm stok belum dibuat -> baru mesinnya.
+  - Uji rantai HARFIAH lewat Ordering (bayar di kasir -> relay) belum dijalankan;
+    F4d dibuktikan dengan menyuntik event langsung (jalur relay-nya sendiri sudah
+    terbukti di F3a). Risiko rendah.
+  - Variant/addon (mis. "extra shot") belum ikut dipotong -> nunggu Catalog punya.
 
 CATATAN JUJUR (utang yang diakui)
   - "Cabang mana" (outlet_id) belum bisa diisi IAM untuk akun owner -> sama
     penghalang yang menahan Ordering. Inventory sudah dipasang PENJAGA: token
     tanpa cabang langsung ditolak (gagal aman, bukan bocor diam-diam).
 
-STATUS: Pondasi (F4a) SELESAI + teruji. Scaffold + skema stok + auth (commit
-        dc6463f). Kelola stok manual owner — belanja masuk & opname — SELESAI &
-        teruji (10 test, saldo dibuktikan == jumlah buku gerakan). Potong-stok
-        otomatis dari event (F4b) BELUM. Resep & master bahan tinggal di Catalog
-        (endpoint /api/recipe sudah siap, commit aa7e3fe).
+STATUS: SELURUH F4 SELESAI & TERUJI.
+        - F4a pondasi: scaffold + skema stok + auth + kelola manual (restock/opname),
+          commit dc6463f/747c6fd (10 test, saldo == jumlah buku gerakan).
+        - F4b potong otomatis dari event, idempoten -> commit 35b0245.
+        - F4c saga (stok kurang / resep kosong / stok menipis) -> commit d16c81d.
+          27 test hijau (F4b+F4c).
+        - F4d bukti E2E lewat RabbitMQ asli (2026-07-21): 8 skenario hijau — potong
+          normal, stok menipis, stok kurang+minus, peredaman alarm, anti potong-
+          dobel, resep kosong, potong-tertunda saat Catalog mati, dan keproses-
+          sekali walau consumer sempat dimatikan. Runbook: docs/INVENTORY-E2E.md.
+        Resep & master bahan tetap di Catalog (endpoint /api/recipe, commit aa7e3fe).
 
 
 ================================================================================
@@ -400,9 +420,8 @@ STATUS: Pondasi (F4a) SELESAI + teruji. Scaffold + skema stok + auth (commit
 ================================================================================
   BERIKUTNYA
 ================================================================================
-  - Inventory F4b: pasang "kuping" pendengar event "sudah dibayar" -> baca resep
-    dari Catalog -> potong stok otomatis + idempoten (anti potong-dobel). Ini
-    inti Inventory; pondasinya (F4a) sudah jadi.
+  - Finance F5: catat omzet dari event "sudah dibayar" (F5b) + shift kasir +
+    laporan. Pakai pola "kuping" event yang sama, sudah divalidasi di F4d.
   - Realtime: frontend layar KDS yang nyambung ke penyiar (heartbeat sudah jadi).
   - Push semua ke GitHub (sekarang commit masih lokal).
   - Fase lebih jauh: Finance (laporan), Notification. Printing/struk (F3c) ditunda.
