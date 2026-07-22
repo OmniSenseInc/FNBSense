@@ -7,12 +7,12 @@ namespace App\Messaging;
 use PhpAmqpLib\Channel\AMQPChannel;
 
 /**
- * Deklarasi infra broker BERSAMA (F3a/F4b) — exchange event utama + dead-letter.
+ * Deklarasi infra broker BERSAMA (F3a/F4b/F5b) — exchange event utama + dead-letter.
  * Semua idempoten: aman dipanggil tiap consumer start. Nama diambil dari
  * config('rabbitmq.topology') supaya relay & consumer merujuk satu sumber.
  *
  * DLX & dead queue di-assert DULU: harus sudah eksis sebelum queue consumer
- * (mis. inventory.orders) menunjuk ke sana lewat x-dead-letter-exchange.
+ * (mis. finance.sales) menunjuk ke sana lewat x-dead-letter-exchange.
  */
 class EventTopology
 {

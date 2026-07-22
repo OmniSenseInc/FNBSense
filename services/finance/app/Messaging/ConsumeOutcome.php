@@ -11,7 +11,7 @@ namespace App\Messaging;
  */
 enum ConsumeOutcome
 {
-    case Ack;       // selesai (sukses / duplikat / resep kosong) → basic_ack
-    case Requeue;   // transient (Catalog down / DB error) → nack(requeue) → coba lagi
+    case Ack;       // selesai (sukses / duplikat) → basic_ack
+    case Requeue;   // transient (galat DB) → nack(requeue) → coba lagi
     case Dead;      // malformed / tak bisa diproses → nack(requeue=false) → DLQ
 }

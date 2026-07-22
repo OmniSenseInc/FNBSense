@@ -1,8 +1,8 @@
 <?php
 
-// Konfigurasi broker + topologi event (F4b). Sama sumber kebenaran nama seperti
+// Konfigurasi broker + topologi event (F5b). Sama sumber kebenaran nama seperti
 // Ordering — exchange/DLX identik supaya consumer nyambung ke pipa yang sama.
-// Consumer Inventory menambah queue-nya sendiri: inventory.orders.
+// Consumer Finance menambah queue-nya sendiri: finance.sales.
 return [
     'connection' => [
         'host' => env('RABBITMQ_HOST', '127.0.0.1'),
@@ -12,12 +12,12 @@ return [
         'vhost' => env('RABBITMQ_VHOST', '/'),
     ],
 
-    // Topologi BERSAMA (harus identik dgn Ordering) + queue milik Inventory.
+    // Topologi BERSAMA (harus identik dgn Ordering) + queue milik Finance.
     'topology' => [
         'exchange' => 'fnbsense.events',          // topic, durable (dibuat Ordering/relay)
         'dlx' => 'fnbsense.events.dlx',           // fanout, durable
         'dead_queue' => 'fnbsense.dead',          // durable
-        'queue' => 'inventory.orders',            // queue consumer Inventory (durable)
+        'queue' => 'finance.sales',               // queue consumer Finance (durable)
         'routing_key' => 'order.paid',            // pola yang di-bind ke exchange
     ],
 
