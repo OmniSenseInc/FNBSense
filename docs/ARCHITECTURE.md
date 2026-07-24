@@ -25,7 +25,7 @@
 | Notification | Node | notif low-stock, WhatsApp |
 | Realtime | Node | koneksi WebSocket (KDS) |
 | Hermes | Python | — (read-only via API/Reporting) |
-| Admin Dashboard | Laravel + Filament | read-model + orchestrasi API |
+| Admin Dashboard | Laravel + Filament | tidak memiliki domain DB; session IAM + orkestrasi API |
 
 ## Invarian keuangan & pola menjaganya
 
@@ -34,6 +34,17 @@
 - **Transactional Outbox:** saat kasir mengonfirmasi PAID, Ordering menulis perubahan status + baris outbox dalam satu transaksi lokal, lalu relay mem-publish `OrderPaid` ke RabbitMQ.
 - **Consumer idempotent:** Inventory & Finance memproses `OrderPaid` sekali saja (dedup by `order_id`). Order PAID tidak boleh diproses dua kali.
 - **Saga / kompensasi:** bila Inventory menemukan stok tak cukup, terbitkan event kegagalan + alert untuk koreksi manual. Uang sudah masuk → tidak ada rollback diam-diam atas PAID.
+
+## Invarian otorisasi lintas-service
+
+- IAM adalah satu-satunya penerbit JWT dan satu-satunya pemegang private key.
+- Service tujuan hanya mempercayai claim dari JWT yang tanda tangan dan waktunya valid.
+- Role diperiksa kembali pada setiap endpoint; visibilitas menu bukan otorisasi.
+- Tenant/outlet tidak pernah dipilih bebas dari input browser. Keduanya diambil dari JWT.
+- Query data tenant wajib memakai `tenant_id`; data operasional outlet wajib memakai
+  pasangan `tenant_id` + `outlet_id`.
+- Dashboard adalah BFF dan tidak pernah membaca database milik service lain.
+- Setiap integrasi baru wajib memiliki tes negatif role dan tes silang tenant.
 
 ## Alur transaksi (berbasis meja + pay-first — revisi final 2026-07-17)
 
@@ -58,7 +69,11 @@ invarian keuangan. Detail state machine & skema: [ORDERING.md](ORDERING.md).
 - **F3** Realtime (Node) + Printing.
 - **F4** Inventory (consume `OrderPaid`, deduksi BOM idempotent, saga stok).
 - **F5** Finance + shift.
-- **F6** Reporting + dashboard.
-- **F7** Promo & bundle + Profitability Guard.
+- **F6** Reporting + dashboard. F6a Reporting dan MVP F6b Dashboard selesai
+  2026-07-23; margin/COGS F6c menunggu kontrak biaya. Detail:
+  [REPORTING.md](REPORTING.md).
+- **F7** Promo & bundle + Profitability Guard. Backend F7a Promo Center selesai
+  2026-07-23; UI ditunda ke integrasi Dashboard. F7b Profitability Guard menunggu
+  kontrak COGS. Detail: [PROMOTIONS.md](PROMOTIONS.md).
 - **F8** Notification (Node) + Hermes (Python).
 - **F9** Hardening: acceptance & resilience test, backup, monitoring, security review.

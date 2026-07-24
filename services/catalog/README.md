@@ -30,8 +30,15 @@ php artisan serve --port=8001
 | PUT·DELETE | `/api/categories/{id}` | `jwt` + `role:owner` |
 | GET·POST | `/api/products` | `jwt` + `role:owner` |
 | PUT·DELETE | `/api/products/{id}` | `jwt` + `role:owner` |
+| GET | `/api/promotion-templates` | `jwt` + `role:owner` |
+| GET·POST | `/api/promotions` | `jwt` + `role:owner` |
+| GET·PUT·DELETE | `/api/promotions/{id}` | `jwt` + `role:owner` |
+| POST | `/api/promotions/{id}/activate` | `jwt` + `role:owner` |
+| POST | `/api/promotions/{id}/pause` | `jwt` + `role:owner` |
 
-Semua query di-scope `tenant_id` dari token (isolasi tenant). `tenant_id` = referensi logis ke IAM (UUID, tanpa FK lintas-DB).
+Semua query promo di-scope `tenant_id` dan `outlet_id` dari token. Definisi promo
+dan engine hitung F7a dijelaskan di [docs/PROMOTIONS.md](../../docs/PROMOTIONS.md).
+`tenant_id` = referensi logis ke IAM (UUID, tanpa FK lintas-DB).
 
 ## Test
 ```bash
