@@ -90,7 +90,14 @@ class AuthController extends Controller
             return response()->json(['message' => 'Email atau password salah.'], 401);
         }
 
-        return $this->respondWithToken($token, $this->guard()->user());
+        $user = $this->guard()->user();
+        if (! $user instanceof User || ! $this->hasActiveBusinessContext($user)) {
+            $this->guard()->logout();
+
+            return response()->json(['message' => 'Email atau password salah.'], 401);
+        }
+
+        return $this->respondWithToken($token, $user);
     }
 
     /**
@@ -98,7 +105,12 @@ class AuthController extends Controller
      */
     public function me(): JsonResponse
     {
-        return response()->json($this->guard()->user());
+        $user = $this->guard()->user();
+        if (! $user instanceof User || ! $this->hasActiveBusinessContext($user)) {
+            return response()->json(['message' => 'Konteks akun tidak aktif atau tidak valid.'], 403);
+        }
+
+        return response()->json($user);
     }
 
     /**
@@ -116,6 +128,13 @@ class AuthController extends Controller
      */
     public function refresh(): JsonResponse
     {
+        $user = $this->guard()->user();
+        if (! $user instanceof User || ! $this->hasActiveBusinessContext($user)) {
+            $this->guard()->logout();
+
+            return response()->json(['message' => 'Konteks akun tidak aktif atau tidak valid.'], 403);
+        }
+
         $token = $this->guard()->refresh();
 
         return $this->respondWithToken($token, $this->guard()->user());
@@ -167,5 +186,21 @@ class AuthController extends Controller
         }
 
         return $slug;
+    }
+
+    /**
+     * Claim tenant/outlet hanya boleh diterbitkan jika keduanya aktif dan outlet
+     * benar-benar dimiliki tenant user. Ini mencegah context confusion lintas tenant.
+     */
+    private function hasActiveBusinessContext(User $user): bool
+    {
+        return $user->is_active
+            && filled($user->tenant_id)
+            && filled($user->outlet_id)
+            && $user->tenant()->where('is_active', true)->exists()
+            && $user->outlet()
+                ->where('tenant_id', $user->tenant_id)
+                ->where('is_active', true)
+                ->exists();
     }
 }

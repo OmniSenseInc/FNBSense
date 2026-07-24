@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Enums\UserRole;
+use App\Models\Outlet;
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -135,6 +137,47 @@ class AuthTest extends TestCase
         ])->assertUnauthorized();
     }
 
+    public function test_login_ditolak_jika_tenant_atau_outlet_tidak_aktif(): void
+    {
+        $this->postJson('/api/auth/register', $this->registerPayload())->assertCreated();
+        $user = User::firstOrFail();
+
+        Tenant::whereKey($user->tenant_id)->update(['is_active' => false]);
+        $this->postJson('/api/auth/login', [
+            'email' => 'owner@kopisenja.test',
+            'password' => 'password123',
+        ])->assertUnauthorized();
+
+        Tenant::whereKey($user->tenant_id)->update(['is_active' => true]);
+        Outlet::whereKey($user->outlet_id)->update(['is_active' => false]);
+        $this->postJson('/api/auth/login', [
+            'email' => 'owner@kopisenja.test',
+            'password' => 'password123',
+        ])->assertUnauthorized();
+    }
+
+    public function test_login_ditolak_jika_outlet_bukan_milik_tenant_user(): void
+    {
+        $this->postJson('/api/auth/register', $this->registerPayload())->assertCreated();
+        $user = User::firstOrFail();
+        $otherTenant = Tenant::create([
+            'name' => 'Tenant B',
+            'slug' => 'tenant-b',
+            'is_active' => true,
+        ]);
+        $otherOutlet = Outlet::create([
+            'tenant_id' => $otherTenant->id,
+            'name' => 'Outlet Tenant B',
+            'is_active' => true,
+        ]);
+        $user->update(['outlet_id' => $otherOutlet->id]);
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'owner@kopisenja.test',
+            'password' => 'password123',
+        ])->assertUnauthorized();
+    }
+
     // ---------- ME / LOGOUT / REFRESH ----------
 
     public function test_me_butuh_token(): void
@@ -150,6 +193,21 @@ class AuthTest extends TestCase
 
         $response->assertOk()->assertJsonPath('email', 'owner@kopisenja.test');
         $this->assertArrayNotHasKey('password', $response->json());
+    }
+
+    public function test_tenant_nonaktif_tidak_bisa_melihat_profil_atau_refresh_token(): void
+    {
+        $token = $this->tokenForNewOwner();
+        $user = User::firstOrFail();
+        Tenant::whereKey($user->tenant_id)->update(['is_active' => false]);
+
+        $this->withToken($token)
+            ->getJson('/api/auth/me')
+            ->assertForbidden();
+
+        $this->withToken($token)
+            ->postJson('/api/auth/refresh')
+            ->assertForbidden();
     }
 
     public function test_logout_mematikan_token(): void
