@@ -11,6 +11,7 @@ use App\Models\Table;
 use App\Services\CatalogClient;
 use App\Services\OrderCalculator;
 use App\Services\OrderNumberGenerator;
+use App\Services\PromotionClient;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -52,8 +53,11 @@ class OrderController extends Controller
     /**
      * Buat order PENDING. Harga & total DIHITUNG SERVER, tak pernah dari client.
      */
-    public function store(StoreOrderRequest $request, CatalogClient $catalog): JsonResponse
-    {
+    public function store(
+        StoreOrderRequest $request,
+        CatalogClient $catalog,
+        PromotionClient $promotions,
+    ): JsonResponse {
         $data = $request->validated();
 
         // Meja penentu tenant+outlet. Non-aktif/tak dikenal -> 404, bukan 422:
@@ -74,7 +78,17 @@ class OrderController extends Controller
             ?? OrderSetting::defaultsFor($table->tenant_id, $table->outlet_id);
 
         // Produk di luar menu tenant -> ProductNotOrderableException -> 422.
-        $calc = (new OrderCalculator)->calculate($data['items'], $products, $setting);
+        $calculator = new OrderCalculator;
+        $calc = $calculator->calculate($data['items'], $products, $setting);
+
+        if ((bool) config('services.catalog.promotions_enabled', true)) {
+            $promotion = $promotions->evaluate(
+                $table->tenant_id,
+                $table->outlet_id,
+                $calc,
+            );
+            $calc = $calculator->applyPromotion($calc, $promotion, $setting);
+        }
 
         $order = $this->persistOrder($table, $data, $setting, $calc);
 
@@ -122,6 +136,8 @@ class OrderController extends Controller
                     $order->outlet_id = $table->outlet_id;
                     $order->table_id = $tableId;
                     $order->order_number = (new OrderNumberGenerator)->generate();
+                    $order->gross_subtotal = $calc['gross_subtotal'];
+                    $order->discount_total = $calc['discount_total'];
                     $order->subtotal = $calc['subtotal'];
                     $order->service_charge = $calc['service_charge'];
                     $order->tax = $calc['tax'];
@@ -129,6 +145,8 @@ class OrderController extends Controller
                     // Tarif di-snapshot: owner ubah tarif besok != ubah struk ini.
                     $order->tax_percent = $setting->tax_percent;
                     $order->service_charge_percent = $setting->service_charge_percent;
+                    $order->promotion_id = $calc['promotion']['id'] ?? null;
+                    $order->promotion_snapshot = $calc['promotion'];
                     $order->expires_at = $expiresAt;
                     $order->save();
 
@@ -161,10 +179,13 @@ class OrderController extends Controller
             'order_type' => $order->order_type,
             'customer_name' => $order->customer_name,
             'status' => $order->status,
+            'gross_subtotal' => $order->gross_subtotal,
+            'discount_total' => $order->discount_total,
             'subtotal' => $order->subtotal,
             'service_charge' => $order->service_charge,
             'tax' => $order->tax,
             'grand_total' => $order->grand_total,
+            'promotion' => $order->promotion_snapshot,
             'expires_at' => $order->expires_at,
             'items' => $order->items->map(fn (OrderItem $item) => [
                 'product_id' => $item->product_id,

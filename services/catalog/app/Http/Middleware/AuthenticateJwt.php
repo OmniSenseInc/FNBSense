@@ -29,6 +29,7 @@ class AuthenticateJwt
         }
 
         $request->attributes->set('tenant_id', $tenantId);
+        $request->attributes->set('outlet_id', $payload->get('outlet_id'));
         $request->attributes->set('role', $payload->get('role'));
         $request->attributes->set('user_id', $payload->get('sub'));
 

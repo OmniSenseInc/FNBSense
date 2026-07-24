@@ -11,11 +11,16 @@ use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
  */
 trait MintsToken
 {
-    protected function mintToken(string $tenantId, string $role = 'owner', ?string $userId = null): string
-    {
+    protected function mintToken(
+        string $tenantId,
+        string $role = 'owner',
+        ?string $userId = null,
+        ?string $outletId = null,
+    ): string {
         $payload = JWTAuth::factory()->customClaims([
             'sub' => $userId ?? (string) Str::uuid(),
             'tenant_id' => $tenantId,
+            'outlet_id' => $outletId,
             'role' => $role,
         ])->make();
 
@@ -25,8 +30,15 @@ trait MintsToken
     /**
      * @return array<string, string>
      */
-    protected function authHeaders(string $tenantId, string $role = 'owner'): array
-    {
-        return ['Authorization' => 'Bearer '.$this->mintToken($tenantId, $role)];
+    protected function authHeaders(
+        string $tenantId,
+        string $role = 'owner',
+        ?string $outletId = null,
+    ): array {
+        return ['Authorization' => 'Bearer '.$this->mintToken(
+            $tenantId,
+            $role,
+            outletId: $outletId,
+        )];
     }
 }

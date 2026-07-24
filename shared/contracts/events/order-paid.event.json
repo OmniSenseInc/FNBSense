@@ -23,11 +23,27 @@
           "type": "object",
           "required": ["subtotal", "service_charge", "tax", "grand_total"],
           "properties": {
+            "gross_subtotal": { "type": "integer", "description": "Subtotal sebelum diskon; opsional untuk kompatibilitas event lama" },
+            "discount_total": { "type": "integer", "minimum": 0, "description": "Total diskon server-side; opsional untuk kompatibilitas event lama" },
             "subtotal": { "type": "integer", "description": "dalam rupiah (integer, tanpa desimal)" },
             "service_charge": { "type": "integer" },
             "tax": { "type": "integer" },
             "grand_total": { "type": "integer" }
           }
+        },
+        "promotion": {
+          "type": "object",
+          "description": "Snapshot promo terpilih saat order dibuat; opsional jika tidak ada promo",
+          "required": ["id", "name", "template"],
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "name": { "type": "string" },
+            "template": {
+              "type": "string",
+              "enum": ["order_percentage", "order_fixed", "product_percentage", "bundle_fixed_price"]
+            }
+          },
+          "additionalProperties": true
         },
         "items": {
           "type": "array",
@@ -36,6 +52,7 @@
             "required": ["product_id", "qty", "unit_price"],
             "properties": {
               "product_id": { "type": "string" },
+              "product_name": { "type": "string", "description": "Snapshot nama produk saat order; opsional untuk kompatibilitas event lama" },
               "variant_id": { "type": "string" },
               "qty": { "type": "integer", "minimum": 1 },
               "unit_price": { "type": "integer" },

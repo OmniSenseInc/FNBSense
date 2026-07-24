@@ -121,4 +121,32 @@ class OrderCalculatorTest extends TestCase
             $this->setting(tax: 11, serviceCharge: 5),
         );
     }
+
+    public function test_promo_menghitung_ulang_service_charge_dan_pajak_dari_subtotal_net(): void
+    {
+        $calculator = new OrderCalculator;
+        $setting = $this->setting(tax: 10, serviceCharge: 5);
+        $base = $calculator->calculate(
+            [['product_id' => 'p1', 'qty' => 2]],
+            $this->catalog(),
+            $setting,
+        );
+
+        $result = $calculator->applyPromotion($base, [
+            'discount_total' => 5000,
+            'promotion' => [
+                'id' => 'promo-1',
+                'name' => 'Diskon Launching',
+                'template' => 'order_fixed',
+            ],
+        ], $setting);
+
+        $this->assertSame(20000, $result['gross_subtotal']);
+        $this->assertSame(5000, $result['discount_total']);
+        $this->assertSame(15000, $result['subtotal']);
+        $this->assertSame(750, $result['service_charge']);
+        $this->assertSame(1575, $result['tax']);
+        $this->assertSame(17325, $result['grand_total']);
+        $this->assertSame('promo-1', $result['promotion']['id']);
+    }
 }

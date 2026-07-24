@@ -181,6 +181,8 @@ class CashierOrderController extends Controller
             'confirmed_by' => $order->confirmed_by,
             'payment_method' => $order->payment_method->value,
             'totals' => [
+                'gross_subtotal' => (int) $order->gross_subtotal,
+                'discount_total' => (int) $order->discount_total,
                 'subtotal' => (int) $order->subtotal,
                 'service_charge' => (int) $order->service_charge,
                 'tax' => (int) $order->tax,
@@ -188,10 +190,15 @@ class CashierOrderController extends Controller
             ],
             'items' => $order->items->map(fn (OrderItem $item) => [
                 'product_id' => $item->product_id,
+                'product_name' => $item->product_name,
                 'qty' => (int) $item->qty,
                 'unit_price' => (int) $item->unit_price,
             ])->all(),
         ];
+
+        if ($order->promotion_snapshot !== null) {
+            $payload['promotion'] = $order->promotion_snapshot;
+        }
 
         // table_id opsional di kontrak; takeaway tak punya meja. Jangan kirim
         // null untuk field bertipe string — cukup hilangkan kuncinya.
@@ -231,12 +238,15 @@ class CashierOrderController extends Controller
             'customer_name' => $order->customer_name,
             'status' => $order->status,
             'table_id' => $order->table_id,
+            'gross_subtotal' => $order->gross_subtotal,
+            'discount_total' => $order->discount_total,
             'subtotal' => $order->subtotal,
             'service_charge' => $order->service_charge,
             'tax' => $order->tax,
             'grand_total' => $order->grand_total,
             'tax_percent' => $order->tax_percent,
             'service_charge_percent' => $order->service_charge_percent,
+            'promotion' => $order->promotion_snapshot,
             'payment_method' => $order->payment_method,
             'confirmed_by' => $order->confirmed_by,
             'confirmed_at' => $order->confirmed_at,

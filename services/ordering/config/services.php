@@ -42,6 +42,8 @@ return [
         // Detik. Catalog lambat/mati -> order baru gagal cepat (503), bukan
         // customer menggantung. Connect & response pakai batas yang sama.
         'timeout' => (int) env('CATALOG_TIMEOUT', 3),
+        'internal_token' => env('CATALOG_SERVICE_TOKEN'),
+        'promotions_enabled' => env('PROMOTIONS_ENABLED', true),
     ],
 
 ];

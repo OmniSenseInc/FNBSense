@@ -29,6 +29,8 @@ class ExpireOrderTest extends TestCase
         $order->tenant_id = (string) Str::uuid();
         $order->outlet_id = (string) Str::uuid();
         $order->order_number = strtoupper(Str::random(6));
+        $order->gross_subtotal = 20000;
+        $order->discount_total = 0;
         $order->subtotal = 20000;
         $order->service_charge = 1000;
         $order->tax = 2310;

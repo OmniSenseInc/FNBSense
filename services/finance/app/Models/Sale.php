@@ -17,15 +17,22 @@ class Sale extends Model
         'order_id',
         'tenant_id',
         'outlet_id',
+        'gross_subtotal',
+        'discount_total',
         'subtotal',
         'service_charge',
         'tax',
         'grand_total',
+        'promotion_id',
+        'promotion_name',
+        'promotion_template',
         'payment_method',
         'paid_at',
     ];
 
     protected $casts = [
+        'gross_subtotal' => 'integer',
+        'discount_total' => 'integer',
         'subtotal' => 'integer',
         'service_charge' => 'integer',
         'tax' => 'integer',

@@ -4,6 +4,8 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\PromotionController;
+use App\Http\Controllers\PromotionEvaluationController;
 use App\Http\Controllers\RecipeController;
 use Illuminate\Support\Facades\Route;
 
@@ -16,6 +18,7 @@ Route::get('menu', [MenuController::class, 'show']);
 // Resep batch untuk Inventory (service-to-service, auth X-Service-Token).
 // ?tenant=<uuid>&products=<uuid,uuid,...>
 Route::get('recipe', [RecipeController::class, 'batch'])->middleware('service');
+Route::post('internal/promotions/evaluate', PromotionEvaluationController::class)->middleware('service');
 
 // Manajemen menu — owner saja (JWT terverifikasi + role:owner).
 Route::middleware(['jwt', 'role:owner'])->group(function () {
@@ -38,4 +41,13 @@ Route::middleware(['jwt', 'role:owner'])->group(function () {
     Route::post('recipes', [RecipeController::class, 'store']);
     Route::put('recipes/{id}', [RecipeController::class, 'update']);
     Route::delete('recipes/{id}', [RecipeController::class, 'destroy']);
+
+    Route::get('promotion-templates', [PromotionController::class, 'templates']);
+    Route::get('promotions', [PromotionController::class, 'index']);
+    Route::post('promotions', [PromotionController::class, 'store']);
+    Route::get('promotions/{id}', [PromotionController::class, 'show']);
+    Route::put('promotions/{id}', [PromotionController::class, 'update']);
+    Route::post('promotions/{id}/activate', [PromotionController::class, 'activate']);
+    Route::post('promotions/{id}/pause', [PromotionController::class, 'pause']);
+    Route::delete('promotions/{id}', [PromotionController::class, 'destroy']);
 });

@@ -19,7 +19,8 @@ class OrderCalculator
      * @param  array<int, array{product_id: string, qty: int, note?: string|null}>  $items
      * @param  array<string, array{name: string, price: mixed}>  $catalogProducts  peta dari CatalogClient
      * @return array{
-     *     subtotal: int, service_charge: int, tax: int, grand_total: int,
+     *     gross_subtotal:int, discount_total:int, subtotal:int,
+     *     service_charge:int, tax:int, grand_total:int, promotion:array|null,
      *     items: array<int, array{product_id: string, product_name: string, unit_price: int, qty: int, line_total: int, note: string|null}>
      * }
      *
@@ -67,11 +68,48 @@ class OrderCalculator
         $grandTotal = $subtotal + $serviceCharge + $tax;
 
         return [
+            'gross_subtotal' => $subtotal,
+            'discount_total' => 0,
             'subtotal' => $subtotal,
             'service_charge' => $serviceCharge,
             'tax' => $tax,
             'grand_total' => $grandTotal,
+            'promotion' => null,
             'items' => $lines,
+        ];
+    }
+
+    /**
+     * Terapkan hasil evaluator tepercaya, lalu hitung ulang service charge dan
+     * pajak dari subtotal net. Discount tidak pernah diterima dari browser.
+     *
+     * @param  array<string, mixed>  $calculation
+     * @param  array{discount_total:int,promotion:array<string,mixed>|null}  $result
+     * @return array<string, mixed>
+     */
+    public function applyPromotion(
+        array $calculation,
+        array $result,
+        OrderSetting $setting,
+    ): array {
+        $grossSubtotal = (int) $calculation['gross_subtotal'];
+        $discount = max(0, min((int) $result['discount_total'], $grossSubtotal));
+        $subtotal = $grossSubtotal - $discount;
+        $serviceCharge = (int) round(
+            $subtotal * (float) $setting->service_charge_percent / 100,
+        );
+        $tax = (int) round(
+            ($subtotal + $serviceCharge) * (float) $setting->tax_percent / 100,
+        );
+
+        return [
+            ...$calculation,
+            'discount_total' => $discount,
+            'subtotal' => $subtotal,
+            'service_charge' => $serviceCharge,
+            'tax' => $tax,
+            'grand_total' => $subtotal + $serviceCharge + $tax,
+            'promotion' => $discount > 0 ? $result['promotion'] : null,
         ];
     }
 }

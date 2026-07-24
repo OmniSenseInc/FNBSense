@@ -30,20 +30,32 @@ class SaleConsumeTest extends TestCase
      * @param  array{subtotal:int,service_charge:int,tax:int,grand_total:int}  $totals
      * @param  array<int, array{product_id:string,qty:int,unit_price:int}>  $items
      */
-    private function envelope(string $tenant, string $outlet, string $orderId, array $totals, array $items, string $payment = 'cash'): array
-    {
+    private function envelope(
+        string $tenant,
+        string $outlet,
+        string $orderId,
+        array $totals,
+        array $items,
+        string $payment = 'cash',
+        ?array $promotion = null,
+    ): array {
+        $payload = [
+            'order_id' => $orderId,
+            'payment_method' => $payment,
+            'totals' => $totals,
+            'items' => $items,
+        ];
+        if ($promotion !== null) {
+            $payload['promotion'] = $promotion;
+        }
+
         return [
             'event_id' => (string) Str::uuid(),
             'event_type' => 'order.paid',
             'occurred_at' => now()->toIso8601String(),
             'tenant_id' => $tenant,
             'outlet_id' => $outlet,
-            'payload' => [
-                'order_id' => $orderId,
-                'payment_method' => $payment,
-                'totals' => $totals,
-                'items' => $items,
-            ],
+            'payload' => $payload,
         ];
     }
 
@@ -66,6 +78,48 @@ class SaleConsumeTest extends TestCase
             'payment_method' => 'qris_static',
         ]);
         $this->assertDatabaseHas('processed_orders', ['order_id' => $orderId, 'status' => 'recorded']);
+    }
+
+    public function test_catat_diskon_dan_snapshot_promo_tanpa_mengubah_subtotal_net(): void
+    {
+        [$tenant, $outlet, $orderId, $produk, $promotionId] = [
+            (string) Str::uuid(),
+            (string) Str::uuid(),
+            (string) Str::uuid(),
+            (string) Str::uuid(),
+            (string) Str::uuid(),
+        ];
+
+        $outcome = $this->consumer()->handle($this->envelope(
+            $tenant,
+            $outlet,
+            $orderId,
+            [
+                'gross_subtotal' => 20000,
+                'discount_total' => 5000,
+                'subtotal' => 15000,
+                'service_charge' => 750,
+                'tax' => 1575,
+                'grand_total' => 17325,
+            ],
+            [['product_id' => $produk, 'qty' => 2, 'unit_price' => 10000]],
+            promotion: [
+                'id' => $promotionId,
+                'name' => 'Diskon Launching',
+                'template' => 'order_fixed',
+            ],
+        ));
+
+        $this->assertSame(ConsumeOutcome::Ack, $outcome);
+        $this->assertDatabaseHas('sales', [
+            'order_id' => $orderId,
+            'gross_subtotal' => 20000,
+            'discount_total' => 5000,
+            'subtotal' => 15000,
+            'promotion_id' => $promotionId,
+            'promotion_name' => 'Diskon Launching',
+            'promotion_template' => 'order_fixed',
+        ]);
     }
 
     /** line_total dihitung ulang server-side (unit_price*qty), bukan disalin dari client. */

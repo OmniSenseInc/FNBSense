@@ -70,15 +70,21 @@ class OrderPaidConsumer
             $outletId = $envelope['outlet_id'];
             $payload = $envelope['payload'];
             $totals = $payload['totals'];
+            $promotion = $payload['promotion'] ?? null;
 
             $sale = Sale::create([
                 'order_id' => $payload['order_id'],
                 'tenant_id' => $tenantId,
                 'outlet_id' => $outletId,
+                'gross_subtotal' => (int) ($totals['gross_subtotal'] ?? $totals['subtotal']),
+                'discount_total' => (int) ($totals['discount_total'] ?? 0),
                 'subtotal' => (int) $totals['subtotal'],
                 'service_charge' => (int) $totals['service_charge'],
                 'tax' => (int) $totals['tax'],
                 'grand_total' => (int) $totals['grand_total'],
+                'promotion_id' => $promotion['id'] ?? null,
+                'promotion_name' => $promotion['name'] ?? null,
+                'promotion_template' => $promotion['template'] ?? null,
                 'payment_method' => $payload['payment_method'] ?? null,
                 'paid_at' => $envelope['occurred_at'],
             ]);
@@ -146,6 +152,36 @@ class OrderPaidConsumer
             }
         }
         if ((int) $totals['grand_total'] !== (int) $totals['subtotal'] + (int) $totals['service_charge'] + (int) $totals['tax']) {
+            return false;
+        }
+
+        $hasGrossSubtotal = array_key_exists('gross_subtotal', $totals);
+        $hasDiscountTotal = array_key_exists('discount_total', $totals);
+        if ($hasGrossSubtotal !== $hasDiscountTotal) {
+            return false;
+        }
+        if ($hasGrossSubtotal
+            && (! $this->nonNegativeInt($totals['gross_subtotal'])
+                || ! $this->nonNegativeInt($totals['discount_total'])
+                || (int) $totals['discount_total'] > (int) $totals['gross_subtotal']
+                || (int) $totals['subtotal'] !== (int) $totals['gross_subtotal'] - (int) $totals['discount_total'])) {
+            return false;
+        }
+
+        $promotion = $payload['promotion'] ?? null;
+        if ($promotion !== null
+            && (! is_array($promotion)
+                || ! $this->nonEmptyString($promotion['id'] ?? null)
+                || ! $this->nonEmptyString($promotion['name'] ?? null)
+                || mb_strlen($promotion['name']) > 255
+                || ! in_array($promotion['template'] ?? null, [
+                    'order_percentage',
+                    'order_fixed',
+                    'product_percentage',
+                    'bundle_fixed_price',
+                ], true)
+                || ! $hasDiscountTotal
+                || (int) $totals['discount_total'] === 0)) {
             return false;
         }
 
