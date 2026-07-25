@@ -1,0 +1,10 @@
+/.env
+/.phpunit.cache
+/.phpunit.result.cache
+/database/*.sqlite
+/bootstrap/cache/*.php
+/storage/logs/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/vendor
