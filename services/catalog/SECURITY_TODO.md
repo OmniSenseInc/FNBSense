@@ -7,7 +7,7 @@ Catatan keamanan dari desain auth lintas-service (stateless RS256). Bukan lubang
 - [ ] **User/tenant dinonaktifkan** — token yang sudah terbit tetap sah di Catalog sampai TTL walau tenant/user di-suspend di IAM. Sama akar masalahnya dengan poin di atas (butuh shared revocation).
 
 ## LOW
-- [ ] **Menu publik tanpa rate limit** — `GET /api/menu` publik & tanpa auth. Tambah `throttle` sebelum go-live untuk cegah scraping/abuse. Pertimbangkan cache per-tenant (menu jarang berubah).
+- [x] **Menu publik tanpa rate limit** — DONE (2026-07-25): `GET /api/menu` diberi `throttle:60,1` per-IP. Cache per-tenant belum (opsional, menu jarang berubah).
 - [ ] **Enumerasi tenant via `?tenant=<uuid>`** — endpoint menu balas data untuk UUID tenant valid. Risiko rendah (UUID tak bisa ditebak), tapi kalau nanti pindah ke slug/subdomain, pastikan tak membocorkan keberadaan tenant.
 - [ ] **Produk tanpa kategori tak tampil di menu** — `MenuController` hanya menampilkan produk lewat kategori aktif. Produk `category_id = null` tak muncul. Putuskan saat UI menu: butuh grup "Lainnya" atau paksa kategori wajib.
 

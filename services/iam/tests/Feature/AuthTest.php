@@ -104,6 +104,22 @@ class AuthTest extends TestCase
         ]))->assertStatus(422)->assertJsonValidationErrors('password');
     }
 
+    /** Policy password: min 8 + huruf besar-kecil + angka. Yang lemah ditolak 422. */
+    public function test_register_menolak_password_lemah(): void
+    {
+        // tanpa huruf besar & tanpa angka
+        $this->postJson('/api/auth/register', $this->registerPayload([
+            'password' => 'lemahsekali',
+            'password_confirmation' => 'lemahsekali',
+        ]))->assertStatus(422)->assertJsonValidationErrors('password');
+
+        // ada huruf besar-kecil tapi tanpa angka
+        $this->postJson('/api/auth/register', $this->registerPayload([
+            'password' => 'TanpaAngka',
+            'password_confirmation' => 'TanpaAngka',
+        ]))->assertStatus(422)->assertJsonValidationErrors('password');
+    }
+
     // ---------- LOGIN ----------
 
     public function test_login_berhasil_dengan_kredensial_benar(): void
