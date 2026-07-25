@@ -25,8 +25,8 @@ class AuthTest extends TestCase
             'business_name' => 'Kopi Senja',
             'name' => 'Vincent',
             'email' => 'owner@kopisenja.test',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'Password123',
+            'password_confirmation' => 'Password123',
         ], $override);
     }
 
@@ -112,7 +112,7 @@ class AuthTest extends TestCase
 
         $this->postJson('/api/auth/login', [
             'email' => 'owner@kopisenja.test',
-            'password' => 'password123',
+            'password' => 'Password123',
         ])->assertOk()->assertJsonStructure(['access_token', 'token_type', 'expires_in', 'user']);
     }
 
@@ -133,7 +133,7 @@ class AuthTest extends TestCase
 
         $this->postJson('/api/auth/login', [
             'email' => 'owner@kopisenja.test',
-            'password' => 'password123',
+            'password' => 'Password123',
         ])->assertUnauthorized();
     }
 
@@ -145,14 +145,14 @@ class AuthTest extends TestCase
         Tenant::whereKey($user->tenant_id)->update(['is_active' => false]);
         $this->postJson('/api/auth/login', [
             'email' => 'owner@kopisenja.test',
-            'password' => 'password123',
+            'password' => 'Password123',
         ])->assertUnauthorized();
 
         Tenant::whereKey($user->tenant_id)->update(['is_active' => true]);
         Outlet::whereKey($user->outlet_id)->update(['is_active' => false]);
         $this->postJson('/api/auth/login', [
             'email' => 'owner@kopisenja.test',
-            'password' => 'password123',
+            'password' => 'Password123',
         ])->assertUnauthorized();
     }
 
@@ -174,7 +174,7 @@ class AuthTest extends TestCase
 
         $this->postJson('/api/auth/login', [
             'email' => 'owner@kopisenja.test',
-            'password' => 'password123',
+            'password' => 'Password123',
         ])->assertUnauthorized();
     }
 

@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('ping', fn () => response()->json(['service' => 'catalog', 'status' => 'ok']));
 
 // Menu publik (customer & Ordering) — tenant via ?tenant=<uuid>.
-Route::get('menu', [MenuController::class, 'show']);
+// Publik tanpa auth -> throttle per-IP cegah scraping/abuse (SECURITY_TODO).
+Route::get('menu', [MenuController::class, 'show'])->middleware('throttle:60,1');
 
 // Resep batch untuk Inventory (service-to-service, auth X-Service-Token).
 // ?tenant=<uuid>&products=<uuid,uuid,...>
