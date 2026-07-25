@@ -245,4 +245,31 @@ class AuthTest extends TestCase
         $response->assertOk()->assertJsonStructure(['access_token']);
         $this->assertNotSame($token, $response->json('access_token'));
     }
+
+    /** Inti Opsi A: token yang BARU SAJA expired (lewat TTL 15m) masih bisa
+     *  ditukar selama dalam refresh_ttl (2 minggu). */
+    public function test_refresh_token_expired_dalam_window_tetap_berhasil(): void
+    {
+        $token = $this->tokenForNewOwner();
+
+        // Maju 30 menit: token (TTL 15m) sudah expired, tapi jauh di dalam refresh_ttl.
+        $this->travel(30)->minutes();
+
+        $this->withToken($token)
+            ->postJson('/api/auth/refresh')
+            ->assertOk()
+            ->assertJsonStructure(['access_token']);
+    }
+
+    /** Di luar refresh_ttl (14 hari) token benar-benar mati — tak bisa di-refresh. */
+    public function test_refresh_token_di_luar_window_ditolak(): void
+    {
+        $token = $this->tokenForNewOwner();
+
+        $this->travel(15)->days(); // > refresh_ttl 20160 menit (14 hari)
+
+        $this->withToken($token)
+            ->postJson('/api/auth/refresh')
+            ->assertUnauthorized();
+    }
 }

@@ -8,7 +8,7 @@ Temuan dari security review (2026-07-16) yang **sengaja ditunda** — bukan luba
 
 ## LOW
 - [x] **Password policy** — DONE (2026-07-25): `Password::defaults()` = min 8 + `mixedCase()` + `numbers()` di `AppServiceProvider::boot()`. `uncompromised()` sengaja TIDAK dipakai (butuh API HIBP eksternal → registrasi lambat & test flaky). Ditest: `test_register_menolak_password_lemah`.
-- [ ] **Refresh window** — `/auth/refresh` di balik `auth:api`, jadi token expired tak bisa di-refresh (refresh_ttl 2 minggu praktis tak terpakai). Kalau mau refresh window jalan, tangani token expired-tapi-dalam-window secara manual.
+- [x] **Refresh window** — DONE (2026-07-25, Opsi A): `/auth/refresh` dikeluarkan dari `auth:api` + `refresh()` menukar token dulu (toleran expired dalam refresh_ttl) baru cek konteks. TTL access token diperpendek 60→15m (window token dicabut mengecil). Ditest: `test_refresh_token_expired_dalam_window_tetap_berhasil` + `_di_luar_window_ditolak`.
 - [ ] **Mass assignment lintas-tenant (future)** — saat bikin `OutletController`/`TenantController`: JANGAN ambil `tenant_id` dari request body, selalu inject dari `auth()->user()->tenant_id`. Jangan izinkan user ubah `is_active` tenant-nya sendiri (anti self-reactivation).
 - [ ] **Hard delete tenant → cascade user** — pertimbangkan `SoftDeletes` atau `restrictOnDelete()` untuk jaga audit trail.
 

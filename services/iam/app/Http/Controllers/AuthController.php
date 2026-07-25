@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use PHPOpenSourceSaver\JWTAuth\Exceptions\JWTException;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 
 class AuthController extends Controller
@@ -128,16 +129,25 @@ class AuthController extends Controller
      */
     public function refresh(): JsonResponse
     {
-        $user = $this->guard()->user();
+        // refresh() toleran token yang sudah expired selama masih dalam refresh_ttl.
+        // Tak boleh panggil user() lebih dulu — itu menuntut token belum expired,
+        // sehingga window refresh tak pernah terpakai. Token di luar window -> 401.
+        try {
+            $token = $this->guard()->refresh();
+        } catch (JWTException) {
+            return response()->json(['message' => 'Token tidak bisa diperbarui.'], 401);
+        }
+
+        // Cek konteks SETELAH refresh: user/tenant yang dinonaktifkan tetap ditolak,
+        // dan token baru langsung di-logout (blacklist) agar tak bisa dipakai.
+        $user = $this->guard()->setToken($token)->user();
         if (! $user instanceof User || ! $this->hasActiveBusinessContext($user)) {
             $this->guard()->logout();
 
             return response()->json(['message' => 'Konteks akun tidak aktif atau tidak valid.'], 403);
         }
 
-        $token = $this->guard()->refresh();
-
-        return $this->respondWithToken($token, $this->guard()->user());
+        return $this->respondWithToken($token, $user);
     }
 
     /**

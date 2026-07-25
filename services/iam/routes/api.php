@@ -9,10 +9,14 @@ Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register'])->middleware('throttle:6,1');
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:6,1');
 
+    // Refresh SENGAJA di luar auth:api: token yang baru saja expired (masih dalam
+    // refresh_ttl) harus tetap bisa ditukar — auth:api akan menolaknya lebih dulu.
+    // Self-protected: butuh token bertanda tangan sah dalam window. Rate-limit anti abuse.
+    Route::post('refresh', [AuthController::class, 'refresh'])->middleware('throttle:10,1');
+
     // Terproteksi — wajib menyertakan token JWT yang valid (guard "api").
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('logout', [AuthController::class, 'logout']);
-        Route::post('refresh', [AuthController::class, 'refresh']);
     });
 });
