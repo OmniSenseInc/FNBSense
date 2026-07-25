@@ -165,4 +165,25 @@ class StockTest extends TestCase
             ->postJson('/api/stock/restock', ['ingredient_id' => (string) Str::uuid(), 'qty' => 5000])
             ->assertStatus(401);
     }
+
+    /** F8a-5 / RBAC.md: kasir BOLEH lihat saldo stok (baca), tapi tetap tak boleh mengubah. */
+    public function test_kasir_boleh_lihat_stok_tetapi_tak_bisa_mengubah(): void
+    {
+        [$tenant, $outlet, $bahan] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+
+        // Owner mengisi stok dulu.
+        $this->withHeaders($this->authHeaders($tenant, $outlet))
+            ->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
+
+        // Kasir BOLEH lihat saldo (200) — perubahan RBAC F8a-5.
+        $this->withHeaders($this->authHeaders($tenant, $outlet, 'cashier'))
+            ->getJson('/api/stock')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+
+        // Tapi kasir tetap TAK boleh mengubah stok (opname owner-only).
+        $this->withHeaders($this->authHeaders($tenant, $outlet, 'cashier'))
+            ->postJson('/api/stock/adjust', ['ingredient_id' => $bahan, 'counted_qty' => 100])
+            ->assertStatus(403);
+    }
 }
