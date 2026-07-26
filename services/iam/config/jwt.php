@@ -164,7 +164,10 @@ return [
     |
     */
 
-    'algo' => env('JWT_ALGO', 'HS256'),
+    // Dipaku, BUKAN dari env. IAM adalah SATU-SATUNYA penerbit token; kalau
+    // JWT_ALGO hilang saat deploy, default vendor HS256 mengubah seluruh sistem
+    // jadi simetris tanpa ada yang menyadarinya.
+    'algo' => 'RS256',
 
     /*
     |--------------------------------------------------------------------------

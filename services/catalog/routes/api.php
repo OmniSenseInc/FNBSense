@@ -18,8 +18,8 @@ Route::get('menu', [MenuController::class, 'show'])->middleware('throttle:60,1')
 
 // Resep batch untuk Inventory (service-to-service, auth X-Service-Token).
 // ?tenant=<uuid>&products=<uuid,uuid,...>
-Route::get('recipe', [RecipeController::class, 'batch'])->middleware('service');
-Route::post('internal/promotions/evaluate', PromotionEvaluationController::class)->middleware('service');
+Route::get('recipe', [RecipeController::class, 'batch'])->middleware(['service', 'throttle:120,1']);
+Route::post('internal/promotions/evaluate', PromotionEvaluationController::class)->middleware(['service', 'throttle:120,1']);
 
 // Manajemen menu — owner saja (JWT terverifikasi + role:owner).
 Route::middleware(['jwt', 'role:owner'])->group(function () {

@@ -7,6 +7,7 @@ use App\Models\Outlet;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Tests\TestCase;
 
 class AuthTest extends TestCase
@@ -236,6 +237,51 @@ class AuthTest extends TestCase
         $this->withToken($token)->getJson('/api/auth/me')->assertUnauthorized();
     }
 
+    /**
+     * Refresh harus MENYEGARKAN klaim dari DB, bukan menyalin dari token lama.
+     *
+     * Catatan koreksi (2026-07-26): semula kusangka klaim HILANG saat refresh
+     * dan menulis test yang memeriksa "klaim ada". Mutasi membuktikan sangkaan
+     * itu keliru — klaim memang ikut terbawa, jadi test lama lolos baik dengan
+     * maupun tanpa perbaikan. Masalah sebenarnya bukan hilang, tapi BASI:
+     * klaim disalin dari token lama, sehingga staff yang baru diturunkan
+     * haknya tetap membawa peran lamanya selama refresh window penuh (14 hari)
+     * di keenam service hilir. Test ini mengunci kesegarannya, bukan
+     * keberadaannya.
+     */
+    public function test_refresh_menyegarkan_klaim_dari_database(): void
+    {
+        $this->markTestSkipped(
+            'Perilaku BELUM diperbaiki - lihat SECURITY_TODO "Klaim basi setelah refresh". '
+            .'Test ini sudah terbukti bergigi (merah terhadap perilaku sekarang), '
+            .'disimpan sebagai bukti reproduksi, bukan dihapus.'
+        );
+
+        $daftar = $this->postJson('/api/auth/register', $this->registerPayload())
+            ->assertCreated()
+            ->json();
+
+        // Turunkan langsung di DB: API sengaja melarang owner mengubah perannya sendiri.
+        User::whereKey($daftar['user']['id'])->update(['role' => UserRole::Cashier->value]);
+
+        $baru = $this->withToken($daftar['access_token'])
+            ->postJson('/api/auth/refresh')
+            ->assertOk()
+            ->json('access_token');
+
+        // Dekode manual: memakai paket berarti menyentuh instance yang state-nya
+        // hidup di proses test yang sama, dan itu sumber hijau-palsu.
+        [, $payloadB64] = explode('.', $baru);
+        $klaim = json_decode(base64_decode(strtr($payloadB64, '-_', '+/')), true);
+
+        $this->assertSame(
+            'cashier',
+            $klaim['role'] ?? null,
+            'Klaim harus mengikuti DB terkini, bukan disalin dari token lama.'
+        );
+        $this->assertSame($daftar['user']['tenant_id'], $klaim['tenant_id'] ?? null);
+        $this->assertSame($daftar['user']['outlet_id'], $klaim['outlet_id'] ?? null);
+    }
     public function test_refresh_menghasilkan_token_baru(): void
     {
         $token = $this->tokenForNewOwner();

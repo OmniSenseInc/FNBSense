@@ -39,6 +39,11 @@ $resolveKeyPath = static function (?string $value): ?string {
 };
 
 return [
+    // Dipaku, BUKAN dari env. Default vendor kalau JWT_ALGO hilang adalah HS256
+    // (simetris) - verifikasi tanda tangan tak boleh bergantung pada satu variabel
+    // env yang bisa lupa di-set saat deploy. Sisi Node (Realtime) sudah memakukan
+    // algoritmanya sejak awal; sisi Laravel dulu justru lebih longgar.
+    'algo' => 'RS256',
     'keys' => [
         // Catalog hanya MEMVERIFIKASI token terbitan IAM, tak pernah menerbitkan.
         // Slot `private` sengaja diisi PUBLIC key yang sama: lcobucci menolak key

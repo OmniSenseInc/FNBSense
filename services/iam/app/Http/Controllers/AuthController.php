@@ -111,7 +111,19 @@ class AuthController extends Controller
             return response()->json(['message' => 'Konteks akun tidak aktif atau tidak valid.'], 403);
         }
 
-        return response()->json($user);
+        // Daftar-IZIN eksplisit, bukan mengandalkan $hidden pada model.
+        // Dengan blocklist, kolom sensitif yang ditambahkan nanti ikut bocor
+        // kecuali seseorang ingat menambahkannya ke $hidden. respondWithToken()
+        // dan StaffController::present() sudah memakai pola ini.
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role?->value,
+            'tenant_id' => $user->tenant_id,
+            'outlet_id' => $user->outlet_id,
+            'is_active' => $user->is_active,
+        ]);
     }
 
     /**
