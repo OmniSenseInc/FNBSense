@@ -40,3 +40,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Skrip ad-hoc operator. Sengaja TIDAK pernah tracked: isinya sering memuat
+# token/kredensial dev sekali pakai. Skrip yang layak disimpan -> pindahkan ke docs/.
+scratchpad/

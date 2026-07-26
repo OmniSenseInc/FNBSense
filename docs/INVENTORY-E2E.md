@@ -11,6 +11,9 @@ Definisi selesai (INVENTORY.md, F4d): **potong sekali per order**, dan **idempot
 lintas-restart** — matikan consumer, bayar lagi, nyalakan → backlog terproses tanpa dobel;
 event `order.paid` yang sama di-redeliver → di-ACK & dibuang (dedup `processed_orders`).
 
+> **Shell:** perintah di bawah ditulis untuk PowerShell (pemisah `;`). Windows
+> PowerShell 5.1 TIDAK mengenal `&&` — memakainya menghasilkan parser error.
+
 Test ini dijalankan manual oleh operator. Tidak ada skrip yang menyalakan MySQL + RabbitMQ +
 3 service sekaligus — sengaja: tiap langkah dilihat hasilnya biar sistematikanya kebaca.
 
@@ -31,14 +34,16 @@ Test ini dijalankan manual oleh operator. Tidak ada skrip yang menyalakan MySQL 
 
 **Nyalakan (4 terminal + broker/DB):**
 ```
+# T0  IAM (dibutuhkan sejak 2026-07-26: kasir dibuat lewat API, bukan di-mint tangan)
+cd services/iam; php artisan serve --port=8002
 # T1  Catalog
-cd services/catalog  && php artisan serve --port=8001
+cd services/catalog; php artisan serve --port=8001
 # T2  Ordering
-cd services/ordering && php artisan serve --port=8002
+cd services/ordering; php artisan serve --port=8000
 # T3  Inventory API (untuk seed stok owner-only; opsional kalau seed via tinker)
-cd services/inventory && php artisan serve --port=8003
+cd services/inventory; php artisan serve --port=8003
 # T4  Consumer Inventory  ← jantung F4d
-cd services/inventory && php artisan inventory:consume
+cd services/inventory; php artisan inventory:consume
 ```
 Consumer harus mencetak: `inventory:consume mendengarkan queue 'inventory.orders'`.
 
@@ -53,34 +58,52 @@ Consumer harus mencetak: `inventory:consume mendengarkan queue 'inventory.orders
 
 > Catat angka awal: `qty_on_hand` bahan itu = **B0**.
 
-### 0b. Mint JWT cashier manual (workaround gap IAM)
+### 0b. Siapkan token kasir lewat IAM (bukan lagi mint manual)
 
-IAM belum bisa membuat outlet, jadi token hasil register biasa `outlet_id`-nya **null** —
-padahal `confirm-payment` di Ordering & scoping stok di Inventory butuh `outlet_id`. Sampai IAM
-diperbaiki, mint token dengan klaim di-set tangan. **Hanya IAM yang pegang private key** untuk
-menandatangani, jadi jalankan dari `services/iam`:
+> **Berubah 2026-07-26 (F-iam-b).** Dulu bagian ini menyuruh menandatangani token
+> dengan klaim di-set tangan, karena IAM belum bisa membuat kasir. Sekarang IAM
+> punya endpoint staff, jadi tokennya lahir dari alur yang sama dengan produksi —
+> ini juga yang bikin bukti E2E ini lebih berarti: yang diuji token asli, bukan
+> token buatan skrip uji.
 
-```php
-// scratchpad/mint-cashier.php  —  jalankan: cd services/iam && php artisan tinker <path skrip ini>
-use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
+```bash
+# 0b-1. Daftar owner + tenant + outlet default sekaligus. Catat tenant_id & outlet_id
+#       dari respons — SEMUA seed (meja, produk, saldo stok) harus memakai dua id ini.
+curl -s -X POST http://localhost:8002/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"business_name":"Kopi Senja","name":"Vincent","email":"owner@kopisenja.test","password":"Password123","password_confirmation":"Password123"}'
 
-$tenant = '<TENANT_UUID seed>';   // HARUS sama dengan tenant meja + saldo stok
-$outlet = '<OUTLET_UUID seed>';   // HARUS sama dengan outlet saldo stok
+# 0b-2. Owner membuat kasir. Role dipaksa cashier oleh server; kasir mewarisi
+#       tenant + outlet owner, jadi id-nya dijamin cocok tanpa disalin tangan.
+curl -s -X POST http://localhost:8002/api/staff \
+  -H "Authorization: Bearer <ACCESS_TOKEN_OWNER>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Kasir Satu","email":"kasir1@kopisenja.test","password":"Kasir12345"}'
 
-$payload = JWTAuth::factory()->customClaims([
-    'sub'       => (string) Illuminate\Support\Str::uuid(),
-    'tenant_id' => $tenant,
-    'outlet_id' => $outlet,
-    'role'      => 'cashier',
-])->make();
-
-echo PHP_EOL.'== TOKEN KASIR (outlet '.$outlet.') =='.PHP_EOL;
-echo JWTAuth::encode($payload)->get().PHP_EOL;
+# 0b-3. Login sebagai kasir → token inilah yang dipakai di langkah 1b.
+curl -s -X POST http://localhost:8002/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"kasir1@kopisenja.test","password":"Kasir12345"}'
 ```
 
-`tenant_id`/`outlet_id` **wajib identik** dengan yang dipakai saat seed meja & saldo — kalau beda,
-`confirm-payment` balikin 404 (isolasi tenant/outlet) atau consumer potong stok di outlet yang salah.
-Token ini yang dipasang sebagai `Authorization: Bearer <...>` di langkah 1b.
+Cek di respons login: `user.role` = `cashier` dan `user.outlet_id` **terisi**. Kalau
+`outlet_id` null, seluruh rantai akan gagal di `confirm-payment` (404 isolasi outlet).
+
+**Umur token 15 menit.** Kalau langkah 1b membalas 401, itu bukan bug — login ulang
+saja (atau `POST /api/auth/refresh`). TTL pendek itu memang disengaja.
+
+### 0c. Jalan pintas: skrip Path B
+
+Seluruh rantai (register owner -> owner bikin kasir -> produk -> meja -> order
+publik -> confirm-payment -> relay -> cek baris `sales` di Finance) tersedia
+sebagai satu skrip yang berhenti tepat di link yang putus:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File docs\path-b.ps1
+```
+
+Memakai consumer **Finance**, jadi tak perlu seed bahan/resep/stok sama sekali.
+Aman diulang: tiap run memakai suffix acak (tenant/email/meja baru).
 
 ---
 
@@ -88,16 +111,16 @@ Token ini yang dipasang sebagai `Authorization: Bearer <...>` di langkah 1b.
 
 ```
 # 1a. Buat order (publik). Ganti body sesuai kontrak Ordering; catat "id" order dari respons.
-curl -s -X POST http://localhost:8002/api/orders \
+curl -s -X POST http://localhost:8000/api/orders \
   -H 'Content-Type: application/json' \
   -d '{ ...payload order dgn product_id ber-resep, qty=2... }'
 
 # 1b. Konfirmasi bayar sebagai kasir → status PAID → tulis 1 baris outbox order.paid
-curl -s -X POST http://localhost:8002/api/cashier/orders/<ORDER_ID>/confirm-payment \
+curl -s -X POST http://localhost:8000/api/cashier/orders/<ORDER_ID>/confirm-payment \
   -H "Authorization: Bearer <JWT_CASHIER>"
 
 # 1c. Relay outbox → publish ke RabbitMQ (satu pass)
-cd services/ordering && php artisan outbox:relay --once
+cd services/ordering; php artisan outbox:relay --once
 ```
 
 Consumer (T4) langsung memproses. **Verifikasi di DB `fnbsense_inventory`:**
@@ -119,14 +142,14 @@ Catalog unreachable (`requeue`) atau resep kosong (`recipe_missing`) → benahi 
 ```
 # 2a. Matikan consumer (Ctrl+C di T4).
 # 2b. Buat + confirm-payment order KEDUA (langkah 1a–1b), lalu relay:
-cd services/ordering && php artisan outbox:relay --once
+cd services/ordering; php artisan outbox:relay --once
 ```
 Pesan sekarang mengendap di queue `inventory.orders` (durable) — belum ada yang mengonsumsi.
 Cek RabbitMQ UI: `inventory.orders` punya **1 Ready**.
 
 ```
 # 2c. Nyalakan lagi consumer:
-cd services/inventory && php artisan inventory:consume
+cd services/inventory; php artisan inventory:consume
 ```
 Backlog diproses **sekali**. Verifikasi order kedua: `qty_on_hand` turun sekali,
 `processed_orders` bertambah **satu** baris.
@@ -144,7 +167,7 @@ yang **persis sama** (order_id sama) ke exchange, langsung ke broker:
 
 # 3b. Publish ulang JSON itu ke exchange fnbsense.events, routing key order.paid.
 #     Lewat tinker Ordering (reuse koneksi & topology yang sudah ada):
-cd services/ordering && php artisan tinker
+cd services/ordering; php artisan tinker
 >>> $json = '<PASTE JSON amplop order.paid tadi>';
 >>> $conn = \App\Messaging\RabbitMqConnection::open();
 >>> $ch = $conn->channel();
