@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\StaffController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -19,4 +20,12 @@ Route::prefix('auth')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('logout', [AuthController::class, 'logout']);
     });
+});
+
+// Manajemen staff (F-iam-b) — owner-only. `role` sengaja dirangkai SETELAH
+// `auth:api` karena middleware itu membaca user hasil autentikasi, bukan klaim.
+Route::middleware(['auth:api', 'role:owner'])->group(function () {
+    Route::get('staff', [StaffController::class, 'index']);
+    Route::post('staff', [StaffController::class, 'store']);
+    Route::put('staff/{id}', [StaffController::class, 'update']);
 });

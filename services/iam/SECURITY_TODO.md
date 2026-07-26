@@ -3,7 +3,7 @@
 Temuan dari security review (2026-07-16) yang **sengaja ditunda** — bukan lubang kritis (0 CRITICAL / 0 HIGH), tapi perlu ditindak saat fitur terkait dibangun.
 
 ## MEDIUM
-- [ ] **Revoke token saat user/tenant dinonaktifkan** — `is_active` cuma dicek saat login; token yang sudah terbit tetap sah sampai TTL (60m). Saat bikin fitur suspend/deaktivasi (mis. respons fraud), tambahkan middleware re-check `is_active` di DB untuk endpoint sensitif, atau blacklist semua token user.
+- [~] **Revoke token saat user/tenant dinonaktifkan** — SEBAGIAN DONE (2026-07-26, F-iam-b). Middleware `role` (`App\Http\Middleware\EnsureRole`) sekarang membaca ulang `is_active` dari DB, jadi akun yang disuspend kehilangan hak istimewanya SEKETIKA di semua route ber-`role:`. Gratis: guard `api` memang sudah menghidupkan model User. Ditest: `test_akun_nonaktif_ditolak_walau_tokennya_masih_berlaku`. SISA: route ber-`auth:api` polos (`/auth/me`, `/auth/logout`) masih menerima token lama sampai TTL 15m habis — dinilai tak berbahaya bagi akun tersuspend. Denylist bersama (Redis) tetap ditunda sampai ada kebutuhan cabut lintas-service.
 - [ ] **User enumeration di `register`** — rule `unique:users,email` membocorkan email mana yang sudah terdaftar. Trade-off UX vs privasi. Keputusan: diterima untuk sekarang; kalau mau dikeraskan, rate-limit per-email.
 
 ## LOW
