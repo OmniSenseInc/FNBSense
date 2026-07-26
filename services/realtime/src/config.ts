@@ -27,8 +27,8 @@ export const PREFETCH = 10;
 // Server WebSocket KDS (F3b).
 export const ws = {
   port: Number(env('WS_PORT', '8081')),
-  // Public key IAM (RS256). Path RELATIF ke monorepo → lintas-OS (beda dari service
-  // Laravel yg masih pakai path absolut Windows). Default: pinjam public key
+  // Public key IAM (RS256). Path RELATIF ke root service → lintas-OS (sejak 2026-07-26
+  // service Laravel juga sudah relatif). Default: pinjam public key
   // Ordering — kunci IAM yang sama disebar ke tiap service.
   jwtPublicKeyPath: resolve(
     env('JWT_PUBLIC_KEY_PATH', '../ordering/storage/keys/jwt-public.pem'),

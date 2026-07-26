@@ -17,9 +17,21 @@ export class KdsServer {
   /** Socket yang sudah balas pong sejak ping terakhir; false = dicurigai mati. */
   private readonly alive = new WeakMap<WebSocket, boolean>();
   private readonly heartbeat: NodeJS.Timeout;
+  /**
+   * Selesai saat server siap menerima koneksi.
+   *
+   * Ada demi test: tanpa ini test harus menebak delay, dan tebakan waktu di
+   * service ini sudah pernah bikin false-negative (socket 1006 saat proses
+   * uji ter-suspend). Produksi boleh mengabaikannya.
+   */
+  readonly ready: Promise<void>;
 
   constructor(port: number) {
     this.server = new WebSocketServer({ port });
+    this.ready = new Promise((resolve, reject) => {
+      this.server.once('listening', () => resolve());
+      this.server.once('error', reject);
+    });
     this.server.on('connection', (socket, req) => this.onConnection(socket, req));
     this.heartbeat = setInterval(() => this.pingAll(), HEARTBEAT_MS);
     console.log(`[kds] WebSocket listen di ws://localhost:${port} (auth: query ?token=<JWT>)`);
