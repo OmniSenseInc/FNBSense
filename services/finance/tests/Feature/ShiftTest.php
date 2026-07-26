@@ -31,6 +31,11 @@ class ShiftTest extends TestCase
             'order_id' => (string) Str::uuid(),
             'tenant_id' => $tenant,
             'outlet_id' => $outlet,
+            // F7 menambah gross_subtotal (NOT NULL, tanpa default) + CHECK
+            // subtotal = gross_subtotal - discount_total. Baris uji ini tanpa
+            // promo, jadi gross == subtotal dan diskon nol.
+            'gross_subtotal' => $grand,
+            'discount_total' => 0,
             'subtotal' => $grand,
             'service_charge' => 0,
             'tax' => 0,

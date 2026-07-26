@@ -30,6 +30,9 @@ class ExpenseReportTest extends TestCase
         Sale::create([
             'order_id' => (string) Str::uuid(),
             'tenant_id' => $tenant, 'outlet_id' => $outlet,
+            // F7: gross_subtotal NOT NULL tanpa default + CHECK subtotal =
+            // gross_subtotal - discount_total. Tanpa promo, gross == subtotal.
+            'gross_subtotal' => $grand, 'discount_total' => 0,
             'subtotal' => $grand, 'service_charge' => 0, 'tax' => 0, 'grand_total' => $grand,
             'payment_method' => $method, 'paid_at' => $paidAt,
         ]);
