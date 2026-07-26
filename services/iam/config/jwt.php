@@ -1,5 +1,37 @@
 <?php
 
+/*
+|--------------------------------------------------------------------------
+| Resolusi path key (FNBSense)
+|--------------------------------------------------------------------------
+|
+| Nilai env disimpan RELATIF terhadap root service supaya sama benarnya di
+| mesin dev Windows, container Linux, dan CI tanpa mengedit .env per mesin.
+| Path yang sudah absolut tetap dihormati (tidak diubah).
+|
+| Prefix `file://` WAJIB dipertahankan: nilai ini diteruskan apa adanya ke
+| openssl_* lewat InMemory::plainText(), dan skema itulah yang membedakan
+| "ini path berkas" dari "ini isi PEM". Nilai tanpa `file://` (mis. isi PEM
+| yang di-inject langsung dari secret manager) sengaja dibiarkan utuh.
+|
+| Catatan operasional: `config:cache` membekukan hasil resolusi ini, jadi
+| jangan pernah mengirim cache config lintas OS.
+*/
+$resolveKeyPath = static function (?string $value): ?string {
+    if (! is_string($value) || ! str_starts_with($value, 'file://')) {
+        return $value;
+    }
+
+    $path = substr($value, 7);
+
+    // Absolut = "/..." (Unix) atau "C:\..." / "C:/..." (Windows).
+    if (! preg_match('#^(?:/|[A-Za-z]:[\\\\/])#', $path)) {
+        $path = base_path($path);
+    }
+
+    return 'file://'.str_replace('\\', '/', $path);
+};
+
 return [
     /*
     |--------------------------------------------------------------------------
@@ -46,7 +78,7 @@ return [
         |
         */
 
-        'public' => env('JWT_PUBLIC_KEY'),
+        'public' => $resolveKeyPath(env('JWT_PUBLIC_KEY')),
 
         /*
         |--------------------------------------------------------------------------
@@ -59,7 +91,7 @@ return [
         |
         */
 
-        'private' => env('JWT_PRIVATE_KEY'),
+        'private' => $resolveKeyPath(env('JWT_PRIVATE_KEY')),
 
         /*
         |--------------------------------------------------------------------------

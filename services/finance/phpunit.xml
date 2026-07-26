@@ -37,8 +37,8 @@
         <!-- JWT: test menandatangani token pakai PRIVATE key IAM (mensimulasikan
              token asli dari IAM), app memverifikasi pakai PUBLIC key Inventory. -->
         <env name="JWT_ALGO" value="RS256"/>
-        <env name="JWT_PRIVATE_KEY" value="file://C:/laragon/www/FNBSense/services/iam/storage/keys/jwt-private.pem"/>
-        <env name="JWT_PUBLIC_KEY" value="file://C:/laragon/www/FNBSense/services/finance/storage/keys/jwt-public.pem"/>
+        <env name="JWT_PRIVATE_KEY" value="file://../iam/storage/keys/jwt-private.pem"/>
+        <env name="JWT_PUBLIC_KEY" value="file://storage/keys/jwt-public.pem"/>
         <env name="JWT_PASSPHRASE" value=""/>
         <env name="JWT_BLACKLIST_ENABLED" value="false"/>
     </php>

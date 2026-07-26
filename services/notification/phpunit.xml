@@ -17,6 +17,5 @@
         <env name="LOG_CHANNEL" value="null"/>
         <env name="JWT_PUBLIC_KEY" value="file://../iam/storage/keys/jwt-public.pem"/>
         <env name="JWT_PRIVATE_KEY" value="file://../iam/storage/keys/jwt-private.pem"/>
-        <env name="JWT_PRIVATE_KEY" value="file://../iam/storage/keys/jwt-private.pem"/>
     </php>
 </phpunit>
