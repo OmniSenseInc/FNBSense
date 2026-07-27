@@ -68,6 +68,37 @@ class MenuTest extends TestCase
             ->assertJsonPath('data.0.name', 'Punya A');
     }
 
+    /**
+     * Penjaga kebocoran kolom.
+     *
+     * Tes ini SENGAJA memeriksa daftar kunci secara persis, bukan sekadar
+     * "tidak ada tenant_id". Alasannya: ancaman sesungguhnya adalah kolom yang
+     * BELUM ADA hari ini — harga modal/COGS di F7b. Dengan perbandingan
+     * persis, kolom baru apa pun di tabel products langsung membuat tes ini
+     * merah, jadi orang yang menambahkannya dipaksa memutuskan sadar apakah
+     * kolom itu boleh dilihat pelanggan.
+     */
+    public function test_menu_publik_hanya_membocorkan_kolom_yang_diizinkan(): void
+    {
+        $tenantId = (string) Str::uuid();
+        $kategori = Category::create(['tenant_id' => $tenantId, 'name' => 'Kopi', 'is_active' => true]);
+        Product::create([
+            'tenant_id' => $tenantId,
+            'category_id' => $kategori->id,
+            'name' => 'Espresso',
+            'price' => 18000,
+            'is_available' => true,
+        ]);
+
+        $data = $this->getJson('/api/menu?tenant='.$tenantId)->assertOk()->json('data');
+
+        $this->assertSame(['id', 'name', 'products'], array_keys($data[0]));
+        $this->assertSame(
+            ['id', 'name', 'description', 'price', 'image_url'],
+            array_keys($data[0]['products'][0]),
+        );
+    }
+
     public function test_param_tenant_wajib_422(): void
     {
         $this->getJson('/api/menu')

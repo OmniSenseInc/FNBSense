@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\MenuCategoryResource;
 use App\Models\Category;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,8 @@ class MenuController extends Controller
             ->orderBy('name')
             ->get();
 
-        return response()->json(['data' => $categories]);
+        // Dibungkus Resource, BUKAN dikirim mentah: menu ini publik tanpa auth,
+        // jadi hanya kolom yang disebut namanya di Resource yang boleh keluar.
+        return response()->json(['data' => MenuCategoryResource::collection($categories)]);
     }
 }
