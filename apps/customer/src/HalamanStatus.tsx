@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
 import { ambilPesanan, type Pesanan } from './api'
+import { rupiah } from './format'
 
 /** Jeda polling. 5 detik: cukup cepat terasa hidup, cukup jarang untuk hemat baterai. */
 const JEDA_MS = 5000
-
-function rupiah(nilai: number): string {
-  return 'Rp ' + new Intl.NumberFormat('id-ID').format(nilai)
-}
 
 /** Satu baris rincian harga. Nilai negatif (promo) ditulis apa adanya. */
 function Baris({ label, nilai }: { label: string; nilai: number }) {

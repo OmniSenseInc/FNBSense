@@ -1,6 +1,8 @@
 import { BrowserRouter, Route, Routes } from 'react-router'
 import HalamanMenu from './HalamanMenu'
+import HalamanRingkasan from './HalamanRingkasan'
 import HalamanStatus from './HalamanStatus'
+import LayoutMeja from './LayoutMeja'
 
 /**
  * Kerangka rute app pelanggan. Sengaja tipis — semua isi ada di halamannya.
@@ -13,7 +15,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/t/:qrToken" element={<HalamanMenu />} />
+        {/* Rute induk memegang meja + menu + keranjang; anak-anaknya cuma
+            layar. Tiap layar punya alamat sendiri supaya refresh, tombol
+            back HP, dan berbagi tautan berperilaku sebagaimana mestinya. */}
+        <Route path="/t/:qrToken" element={<LayoutMeja />}>
+          <Route index element={<HalamanMenu />} />
+          <Route path="pesan" element={<HalamanRingkasan />} />
+        </Route>
         {/* Alamat status bisa di-bookmark & di-refresh: pelanggan menunggu
             pesanannya, HP-nya bisa mati layar atau tab-nya tertutup. */}
         <Route path="/order/:id" element={<HalamanStatus />} />
