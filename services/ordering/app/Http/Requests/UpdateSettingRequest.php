@@ -27,6 +27,15 @@ class UpdateSettingRequest extends FormRequest
             'tax_percent' => ['sometimes', 'numeric', 'min:0', 'max:'.OrderSetting::MAX_TAX_PERCENT],
             'service_charge_percent' => ['sometimes', 'numeric', 'min:0', 'max:'.OrderSetting::MAX_SERVICE_CHARGE_PERCENT],
             'order_expiry_minutes' => ['sometimes', 'integer', 'min:1', 'max:'.OrderSetting::MAX_EXPIRY_MINUTES],
+            // nullable disengaja: owner harus bisa MENCABUT QRIS-nya (kirim
+            // null), bukan cuma menggantinya. Tanpa itu, QRIS rekening lama
+            // menempel selamanya begitu sekali dipasang.
+            //
+            // 'url' bukan sekadar kerapian: alamat ini berakhir sebagai <img>
+            // di layar pelanggan yang sedang membayar. Teks sembarangan di
+            // sana bukan cuma gambar rusak — ia gambar rusak di layar yang
+            // paling tidak boleh membuat orang ragu.
+            'qris_image_url' => ['sometimes', 'nullable', 'url', 'max:'.OrderSetting::MAX_QRIS_URL_LENGTH],
         ];
     }
 
@@ -38,6 +47,8 @@ class UpdateSettingRequest extends FormRequest
         return [
             'tax_percent.max' => 'Tarif pajak maksimal '.OrderSetting::MAX_TAX_PERCENT.'%.',
             'service_charge_percent.max' => 'Service charge maksimal '.OrderSetting::MAX_SERVICE_CHARGE_PERCENT.'%.',
+            'qris_image_url.url' => 'Alamat gambar QRIS harus berupa URL yang sah.',
+            'qris_image_url.max' => 'Alamat gambar QRIS maksimal '.OrderSetting::MAX_QRIS_URL_LENGTH.' karakter.',
         ];
     }
 }

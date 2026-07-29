@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Http\Requests\StoreOrderRequest;
 use App\Models\Order;
@@ -171,6 +172,35 @@ class OrderController extends Controller
      *
      * @return array<string, mixed>
      */
+    /**
+     * Alamat gambar QRIS outlet, atau null kalau QR tak boleh ditampilkan.
+     *
+     * Penjaga status ada DI SINI, bukan di layar pelanggan, dan itu disengaja:
+     * kalau frontend yang memutuskan, satu kondisi yang terlewat saat menata
+     * ulang komponen langsung berubah jadi masalah uang. Server tak pernah
+     * mengirim apa yang tak boleh ditampilkan, jadi UI tak punya kesempatan
+     * salah.
+     *
+     * Dua kerusakan yang dicegahnya:
+     * - status PAID masih memajang QR -> pelanggan membayar untuk kedua kalinya.
+     * - status EXPIRED masih memajang QR -> uang masuk untuk pesanan yang sudah
+     *   hangus, dan kafe yang menanggung ributnya.
+     *
+     * Efek sampingnya kebetulan bagus: query setting cuma jalan untuk order
+     * yang memang sedang menunggu bayar, bukan pada tiap polling status yang
+     * sudah final.
+     */
+    private function qrisUntuk(Order $order): ?string
+    {
+        if ($order->status !== OrderStatus::Pending) {
+            return null;
+        }
+
+        return OrderSetting::query()
+            ->where('outlet_id', $order->outlet_id)
+            ->value('qris_image_url');
+    }
+
     private function present(Order $order): array
     {
         return [
@@ -187,6 +217,14 @@ class OrderController extends Controller
             'grand_total' => $order->grand_total,
             'promotion' => $order->promotion_snapshot,
             'expires_at' => $order->expires_at,
+            // Dibungkus objek, bukan field lepas di akar: instruksi pembayaran
+            // masih akan tumbuh (penanda "pelanggan mengaku sudah bayar", cara
+            // bayar selain QRIS), dan menambah kunci ke dalam objek yang sudah
+            // ada jauh lebih murah daripada mengubah bentuk respons yang sudah
+            // dipakai app pelanggan.
+            'payment' => [
+                'qris_image_url' => $this->qrisUntuk($order),
+            ],
             'items' => $order->items->map(fn (OrderItem $item) => [
                 'product_id' => $item->product_id,
                 'product_name' => $item->product_name,

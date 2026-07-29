@@ -37,6 +37,16 @@ class OrderSetting extends Model
     public const MAX_SERVICE_CHARGE_PERCENT = 30;
 
     /**
+     * Batas panjang alamat gambar QRIS. Satu sumber untuk dua tempat: lebar
+     * kolom di migration dan aturan UpdateSettingRequest.
+     *
+     * 1024 memberi ruang untuk URL bertanda tangan (panjang karena membawa
+     * kedaluwarsa & tanda tangan di query string), tanpa membiarkan seseorang
+     * menjejalkan data gambar utuh ke dalam kolom teks.
+     */
+    public const MAX_QRIS_URL_LENGTH = 1024;
+
+    /**
      * tenant_id & outlet_id TIDAK fillable: keduanya berasal dari klaim JWT,
      * diisi eksplisit di controller. Kalau fillable, owner bisa mengirim
      * outlet_id milik siapa pun lewat body dan menulis tarif outlet orang lain.
@@ -45,6 +55,10 @@ class OrderSetting extends Model
         'tax_percent',
         'service_charge_percent',
         'order_expiry_minutes',
+        // Aman di-fillable: ini data TAMPILAN milik outlet, bukan penentu
+        // kepemilikan seperti tenant_id/outlet_id di atas. Outlet mana yang
+        // ditulis tetap ditentukan klaim JWT di controller.
+        'qris_image_url',
     ];
 
     protected function casts(): array
@@ -67,6 +81,9 @@ class OrderSetting extends Model
             'tax_percent' => 0,
             'service_charge_percent' => 0,
             'order_expiry_minutes' => self::DEFAULT_EXPIRY_MINUTES,
+            // Belum dikonfigurasi = belum ada QRIS. Layar pelanggan jatuh ke
+            // instruksi bayar di kasir, bukan menampilkan kotak kosong.
+            'qris_image_url' => null,
         ]);
 
         // Non-fillable -> harus di-set eksplisit, tidak lewat konstruktor.
