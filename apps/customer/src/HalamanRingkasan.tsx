@@ -13,7 +13,7 @@ import { useMeja } from './konteksMeja'
  * teman semeja.
  */
 export default function HalamanRingkasan() {
-  const { qrToken, kategori, qty, hapusKeranjang } = useMeja()
+  const { qrToken, kategori, isi, hapusKeranjang } = useMeja()
   const navigate = useNavigate()
 
   const [nama, setNama] = useState('')
@@ -27,8 +27,8 @@ export default function HalamanRingkasan() {
   const [terkirim, setTerkirim] = useState(false)
 
   const semuaProduk = kategori.flatMap((k) => k.produk)
-  const dipesan = semuaProduk.filter((p) => (qty[p.id] ?? 0) > 0)
-  const totalHarga = dipesan.reduce((jumlah, p) => jumlah + p.harga * qty[p.id], 0)
+  const dipesan = semuaProduk.filter((p) => (isi[p.id]?.qty ?? 0) > 0)
+  const totalHarga = dipesan.reduce((jumlah, p) => jumlah + p.harga * isi[p.id].qty, 0)
 
   // Halaman periksa-pesanan tanpa pesanan cuma tombol mati yang membingungkan.
   // Terjadi kalau alamat ini dibuka langsung, atau di-refresh setelah
@@ -44,7 +44,7 @@ export default function HalamanRingkasan() {
     setMengirim(true)
     setGalatKirim('')
     try {
-      const pesanan = await kirimPesanan(susunPesanan({ qrToken, nama, qty }))
+      const pesanan = await kirimPesanan(susunPesanan({ qrToken, nama, isi }))
       // HANYA setelah server menerimanya. Kalau pengiriman gagal, keranjang
       // justru wajib bertahan — itu seluruh alasan ia disimpan.
       setTerkirim(true)
@@ -82,11 +82,20 @@ export default function HalamanRingkasan() {
               <div className="min-w-0 flex-1">
                 <p className="text-base font-semibold">{p.nama}</p>
                 <p className="text-sm text-slate-600">
-                  {qty[p.id]} × {rupiah(p.harga)}
+                  {isi[p.id].qty} × {rupiah(p.harga)}
                 </p>
+                {/* Catatan ditampilkan UTUH di sini, tak dipotong seperti di
+                    kartu menu: ini layar terakhir sebelum pesanan berangkat,
+                    satu-satunya tempat pelanggan bisa menyadari catatannya
+                    nyasar ke menu yang salah. */}
+                {isi[p.id].note && (
+                  <p className="mt-0.5 text-sm break-words text-amber-800">
+                    Catatan: {isi[p.id].note}
+                  </p>
+                )}
               </div>
               <p className="text-base font-semibold tabular-nums">
-                {rupiah(p.harga * qty[p.id])}
+                {rupiah(p.harga * isi[p.id].qty)}
               </p>
             </li>
           ))}

@@ -46,6 +46,21 @@ export const MAKS_QTY = 99
 /** Cermin `items` max:50 di StoreOrderRequest. */
 export const MAKS_ITEM = 50
 
+/** Cermin `items.*.note` max:255 di StoreOrderRequest. */
+export const MAKS_NOTE = 255
+
+/**
+ * Satu baris keranjang.
+ *
+ * qty dan note tinggal dalam SATU objek, bukan dua peta terpisah yang
+ * di-index id produk yang sama. Dua peta harus dijaga sinkron, dan yang
+ * pertama kali lupa disinkronkan selalu penghapusan: item dibuang dari
+ * keranjang, catatannya tertinggal, lalu menempel diam-diam ke pesanan
+ * berikutnya untuk produk yang sama. Satu objek membuat itu mustahil.
+ */
+export type BarisKeranjang = { qty: number; note: string }
+export type Keranjang = Record<string, BarisKeranjang>
+
 async function ambil<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) {
@@ -132,7 +147,7 @@ export type PayloadPesanan = {
   qr_token: string
   order_type: 'dine_in'
   customer_name: string
-  items: Array<{ product_id: string; qty: number }>
+  items: Array<{ product_id: string; qty: number; note?: string }>
 }
 
 /**
@@ -148,16 +163,24 @@ export type PayloadPesanan = {
 export function susunPesanan(args: {
   qrToken: string
   nama: string
-  qty: Record<string, number>
+  isi: Keranjang
 }): PayloadPesanan {
   return {
     qr_token: args.qrToken,
     order_type: 'dine_in',
     customer_name: args.nama.trim(),
-    items: Object.entries(args.qty).flatMap(([product_id, mentah]) => {
+    items: Object.entries(args.isi).flatMap(([product_id, baris]) => {
       // floor sebelum bandingkan: 0.5 harus hilang, bukan jadi 1.
-      const qty = Math.min(MAKS_QTY, Math.floor(mentah))
-      return qty > 0 ? [{ product_id, qty }] : []
+      const qty = Math.min(MAKS_QTY, Math.floor(baris.qty))
+      if (qty <= 0) return []
+      // Dipotong di sini juga, bukan hanya mengandalkan maxLength di input:
+      // isi keranjang bisa datang dari localStorage yang diedit orang, dan
+      // 256 karakter berarti 422 setelah pelanggan menekan kirim.
+      const note = baris.note.trim().slice(0, MAKS_NOTE)
+      // Catatan kosong DIHILANGKAN dari payload, bukan dikirim sebagai "":
+      // kolomnya nullable, dan "" membuat kasir melihat baris catatan hampa
+      // di layar antreannya.
+      return [note ? { product_id, qty, note } : { product_id, qty }]
     }),
   }
 }
@@ -175,6 +198,31 @@ export type Pesanan = {
   /** Yang benar-benar ditagih. Dihitung SERVER, bukan disalin dari client. */
   grand_total: number
   expires_at: string | null
+  /**
+   * Gambar QRIS kafe, atau null kalau QR tak boleh ditampilkan.
+   *
+   * Server yang memutuskan, bukan layar: ia mengirim null untuk pesanan yang
+   * sudah dibayar, batal, atau kedaluwarsa. Jadi tak ada kondisi status yang
+   * perlu — dan bisa terlewat — ditulis ulang di sini.
+   */
+  qrisImageUrl: string | null
+}
+
+/**
+ * Alamat QRIS dari blok `payment`. Diperlakukan sebagai data asing.
+ *
+ * Dua hal yang dijaga: respons server versi lama belum punya blok `payment`
+ * sama sekali (halaman status tak boleh tumbang gara-gara itu), dan nilainya
+ * berakhir di `<img src>` — string kosong menghasilkan permintaan balik ke
+ * alamat halaman itu sendiri, yang muncul sebagai gambar rusak.
+ *
+ * Diekspor untuk diuji langsung, alasan yang sama seperti petakanMenu: inilah
+ * bagian yang bisa salah tanpa bersuara.
+ */
+export function bacaQris(payment: unknown): string | null {
+  if (typeof payment !== 'object' || payment === null) return null
+  const nilai = (payment as Record<string, unknown>).qris_image_url
+  return typeof nilai === 'string' && nilai.trim() !== '' ? nilai : null
 }
 
 /** Sama seperti harga menu: semua nilai uang datang sebagai string decimal. */
@@ -190,6 +238,7 @@ function petakanPesanan(m: Record<string, unknown>): Pesanan {
     tax: Number(m.tax),
     grand_total: Number(m.grand_total),
     expires_at: m.expires_at ? String(m.expires_at) : null,
+    qrisImageUrl: bacaQris(m.payment),
   }
 }
 

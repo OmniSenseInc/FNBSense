@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Produk } from './api'
+import { MAKS_NOTE, type Produk } from './api'
 import { labelTombol, rupiah } from './format'
 import KontrolQty from './KontrolQty'
 
@@ -18,6 +18,7 @@ import KontrolQty from './KontrolQty'
 export default function DialogProduk({
   produk,
   qtySekarang,
+  catatanSekarang,
   onTutup,
   onSimpan,
 }: {
@@ -25,15 +26,18 @@ export default function DialogProduk({
   produk: Produk | null
   /** Jumlah yang sudah ada di keranjang — menentukan bunyi tombol. */
   qtySekarang: number
+  /** Catatan yang sudah tersimpan untuk item ini, '' kalau belum ada. */
+  catatanSekarang: string
   onTutup: () => void
-  onSimpan: (qty: number) => void
+  onSimpan: (qty: number, note: string) => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
 
-  // Angka sementara: keranjang baru berubah saat tombol bawah ditekan, jadi
-  // pelanggan yang cuma mengintip lalu menutup tidak diam-diam mengubah
-  // pesanannya.
+  // Angka & catatan sementara: keranjang baru berubah saat tombol bawah
+  // ditekan, jadi pelanggan yang cuma mengintip lalu menutup tidak diam-diam
+  // mengubah pesanannya.
   const [draft, setDraft] = useState(1)
+  const [catatan, setCatatan] = useState('')
 
   useEffect(() => {
     const dialog = ref.current
@@ -44,13 +48,17 @@ export default function DialogProduk({
     // separuh mati.
     if (produk && !dialog.open) {
       setDraft(qtySekarang > 0 ? qtySekarang : 1)
+      // Catatan lama ikut dimuat, bukan dikosongkan: pelanggan yang membuka
+      // lagi untuk MENAMBAH jumlah tak boleh kehilangan "tanpa gula" yang
+      // sudah dia tulis tadi.
+      setCatatan(catatanSekarang)
       dialog.showModal()
     } else if (!produk && dialog.open) {
       dialog.close()
     }
-  }, [produk, qtySekarang])
+  }, [produk, qtySekarang, catatanSekarang])
 
-  const simpan = () => onSimpan(draft)
+  const simpan = () => onSimpan(draft, catatan)
 
   // Tak ada yang bisa dihapus kalau item ini memang belum di keranjang.
   const tanpaEfek = draft === 0 && qtySekarang === 0
@@ -106,6 +114,27 @@ export default function DialogProduk({
                     {produk.deskripsi}
                   </p>
                 )}
+
+                {/* Catatan tinggal di dalam area yang bisa di-scroll, bukan di
+                    bar bawah: keyboard HP yang naik menutupi separuh layar,
+                    dan kotak ketik yang menempel di bar akan tertimbun. */}
+                <label className="mt-5 block">
+                  <span className="text-sm font-semibold">Catatan (opsional)</span>
+                  <textarea
+                    value={catatan}
+                    onChange={(e) => setCatatan(e.target.value)}
+                    // maxLength = pagar pertama; susunPesanan memotong lagi
+                    // karena isi keranjang bisa datang dari localStorage.
+                    maxLength={MAKS_NOTE}
+                    rows={2}
+                    placeholder="Contoh: tanpa gula, jangan pedas"
+                    className="mt-1.5 w-full resize-none rounded-md border border-slate-300 p-3 text-base placeholder:text-slate-400"
+                  />
+                  <span className="block text-sm text-slate-600">
+                    Diteruskan ke dapur. Permintaan yang tak bisa dipenuhi akan
+                    dikabari kasir.
+                  </span>
+                </label>
               </div>
             </div>
 

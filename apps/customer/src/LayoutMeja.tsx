@@ -30,7 +30,7 @@ export default function LayoutMeja() {
   const [status, setStatus] = useState<Status>('memuat')
   const [meja, setMeja] = useState<Meja | null>(null)
   const [kategori, setKategori] = useState<Kategori[]>([])
-  const [qty, setQty, hapusKeranjang] = useKeranjang(qrToken)
+  const [isi, setIsi, hapusKeranjang] = useKeranjang(qrToken)
 
   // DUA panggilan berurutan, bukan satu: `GET /t/{qr}` tak mengembalikan menu,
   // dan tenant_id-nya baru diketahui setelah panggilan pertama selesai.
@@ -75,5 +75,5 @@ export default function LayoutMeja() {
     )
   }
 
-  return <Outlet context={{ qrToken, meja, kategori, qty, setQty, hapusKeranjang }} />
+  return <Outlet context={{ qrToken, meja, kategori, isi, setIsi, hapusKeranjang }} />
 }

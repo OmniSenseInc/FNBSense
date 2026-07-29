@@ -4,6 +4,7 @@ import { NAMA_KAFE, type Produk } from './api'
 import DialogProduk from './DialogProduk'
 import { rupiah } from './format'
 import KontrolQty from './KontrolQty'
+import { ubahBaris } from './keranjang'
 import { useMeja } from './konteksMeja'
 
 /**
@@ -53,7 +54,7 @@ function GambarMenu({ src }: { src: string | null }) {
  * memilih dan menghitung, tak mengambil apa pun sendiri.
  */
 export default function HalamanMenu() {
-  const { meja, kategori, qty, setQty } = useMeja()
+  const { meja, kategori, isi, setIsi } = useMeja()
 
   const [cari, setCari] = useState('')
 
@@ -77,15 +78,18 @@ export default function HalamanMenu() {
           }))
           .filter((k) => k.produk.length > 0)
 
-  const setSatu = (id: string, nilai: number) =>
-    setQty((lama) => ({ ...lama, [id]: nilai }))
+  // Satu-satunya pintu mengubah keranjang di halaman ini. Aturannya (catatan
+  // bertahan saat jumlah berubah, qty nol menghapus barisnya) ada di
+  // keranjang.ts supaya bisa diuji tanpa merender apa pun.
+  const ubah = (id: string, qty: number, note?: string) =>
+    setIsi((lama) => ubahBaris(lama, id, qty, note))
 
   // Dihitung dari SELURUH menu, bukan dari `tampil`: item yang sedang
   // tersembunyi oleh pencarian tetap ada di keranjang dan tetap harus dibayar.
   const semuaProduk = kategori.flatMap((k) => k.produk)
-  const totalItem = Object.values(qty).reduce((a, b) => a + b, 0)
+  const totalItem = Object.values(isi).reduce((a, b) => a + b.qty, 0)
   const totalHarga = semuaProduk.reduce(
-    (jumlah, p) => jumlah + p.harga * (qty[p.id] ?? 0),
+    (jumlah, p) => jumlah + p.harga * (isi[p.id]?.qty ?? 0),
     0,
   )
 
@@ -142,7 +146,9 @@ export default function HalamanMenu() {
             </h2>
 
             <ul className="flex flex-col gap-3">
-              {k.produk.map((p) => (
+              {k.produk.map((p) => {
+                const baris = isi[p.id]
+                return (
                 <li key={p.id} className="rounded-md border border-slate-200 p-3">
                   {/* HANYA baris ini yang jadi tombol, bukan seluruh kartu:
                       kalau kartunya yang diklik, menekan +/− ikut membuka
@@ -164,6 +170,14 @@ export default function HalamanMenu() {
                         {p.deskripsi}
                       </p>
                       <p className="mt-1.5 text-base font-semibold">{rupiah(p.harga)}</p>
+                      {/* Catatan ikut terlihat TANPA membuka lembar detail:
+                          pelanggan yang menulis "tanpa gula" lalu scroll jauh
+                          tak punya cara lain memastikan permintaannya nyantol. */}
+                      {baris?.note && (
+                        <p className="mt-1 truncate text-sm text-amber-800">
+                          Catatan: {baris.note}
+                        </p>
+                      )}
                     </div>
                   </button>
 
@@ -173,13 +187,14 @@ export default function HalamanMenu() {
                       yang dipecah. */}
                   <div className="mt-3 flex justify-end">
                     <KontrolQty
-                      nilai={qty[p.id] ?? 0}
-                      onUbah={(n) => setSatu(p.id, n)}
+                      nilai={baris?.qty ?? 0}
+                      onUbah={(n) => ubah(p.id, n)}
                       label={p.nama}
                     />
                   </div>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           </section>
         ))}
@@ -189,10 +204,11 @@ export default function HalamanMenu() {
           yang stabil supaya showModal() punya sasaran saat menu dipilih. */}
       <DialogProduk
         produk={produkDibuka}
-        qtySekarang={produkDibuka ? (qty[produkDibuka.id] ?? 0) : 0}
+        qtySekarang={produkDibuka ? (isi[produkDibuka.id]?.qty ?? 0) : 0}
+        catatanSekarang={produkDibuka ? (isi[produkDibuka.id]?.note ?? '') : ''}
         onTutup={() => setProdukDibuka(null)}
-        onSimpan={(n) => {
-          if (produkDibuka) setSatu(produkDibuka.id, n)
+        onSimpan={(n, note) => {
+          if (produkDibuka) ubah(produkDibuka.id, n, note)
           setProdukDibuka(null)
         }}
       />

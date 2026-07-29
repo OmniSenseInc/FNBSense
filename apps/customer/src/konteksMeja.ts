@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { useOutletContext } from 'react-router'
-import type { Kategori, Meja } from './api'
+import type { Kategori, Keranjang, Meja } from './api'
 
 /**
  * Apa yang dibagi rute induk /t/:qrToken ke halaman-halaman di bawahnya.
@@ -17,8 +17,8 @@ export type KonteksMeja = {
   qrToken: string
   meja: Meja
   kategori: Kategori[]
-  qty: Record<string, number>
-  setQty: Dispatch<SetStateAction<Record<string, number>>>
+  isi: Keranjang
+  setIsi: Dispatch<SetStateAction<Keranjang>>
   /** Dipanggil HANYA setelah pesanan berhasil terkirim. */
   hapusKeranjang: () => void
 }
