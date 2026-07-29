@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Contoh kode QRIS untuk pengembangan">
+  <!--
+    QRIS TIRUAN untuk pengembangan. BUKAN kode yang bisa dipindai.
+
+    Ada supaya tata letak blok pembayaran di HalamanStatus bisa dinilai dengan
+    ukuran dan bobot visual yang benar, tanpa menempelkan QRIS sungguhan milik
+    siapa pun ke dalam repo. Saat kafe sungguhan dipasang, kolom
+    order_settings.qris_image_url diisi URL gambar QRIS asli dan berkas ini
+    tidak dipakai lagi.
+  -->
+  <rect width="100" height="100" fill="#ffffff"/>
+
+  <g fill="#0f172a">
+    <!-- Tiga penanda sudut khas QR: kotak 7 modul, berlubang putih di tengah. -->
+    <path d="M0 0h28v28H0zM4 4v20h20V4z" fill-rule="evenodd"/>
+    <rect x="8" y="8" width="12" height="12"/>
+
+    <path d="M72 0h28v28H72zM76 4v20h20V4z" fill-rule="evenodd"/>
+    <rect x="80" y="8" width="12" height="12"/>
+
+    <path d="M0 72h28v28H0zM4 76v20h20V76z" fill-rule="evenodd"/>
+    <rect x="8" y="80" width="12" height="12"/>
+
+    <!-- Garis pengatur waktu (timing pattern) — selang-seling tiap modul. -->
+    <rect x="32" y="24" width="4" height="4"/>
+    <rect x="40" y="24" width="4" height="4"/>
+    <rect x="48" y="24" width="4" height="4"/>
+    <rect x="56" y="24" width="4" height="4"/>
+    <rect x="64" y="24" width="4" height="4"/>
+    <rect x="24" y="32" width="4" height="4"/>
+    <rect x="24" y="40" width="4" height="4"/>
+    <rect x="24" y="48" width="4" height="4"/>
+    <rect x="24" y="56" width="4" height="4"/>
+    <rect x="24" y="64" width="4" height="4"/>
+
+    <!-- Penanda perataan kecil di kanan bawah. -->
+    <path d="M76 76h16v16H76zM80 80v8h8v-8z" fill-rule="evenodd"/>
+    <rect x="82" y="82" width="4" height="4"/>
+
+    <!-- Isi data — pola tetap, cuma untuk mengisi bidang. -->
+    <rect x="32" y="4" width="4" height="8"/>
+    <rect x="40" y="8" width="8" height="4"/>
+    <rect x="56" y="4" width="4" height="12"/>
+    <rect x="36" y="16" width="12" height="4"/>
+    <rect x="60" y="16" width="8" height="4"/>
+    <rect x="4" y="32" width="8" height="4"/>
+    <rect x="16" y="36" width="4" height="8"/>
+    <rect x="4" y="48" width="4" height="12"/>
+    <rect x="12" y="56" width="8" height="4"/>
+    <rect x="8" y="64" width="4" height="4"/>
+
+    <rect x="32" y="32" width="8" height="8"/>
+    <rect x="44" y="36" width="4" height="4"/>
+    <rect x="52" y="32" width="12" height="4"/>
+    <rect x="68" y="36" width="8" height="4"/>
+    <rect x="84" y="32" width="4" height="8"/>
+    <rect x="32" y="44" width="4" height="8"/>
+    <rect x="40" y="44" width="8" height="4"/>
+    <rect x="56" y="44" width="4" height="12"/>
+    <rect x="64" y="48" width="8" height="4"/>
+    <rect x="76" y="44" width="4" height="8"/>
+    <rect x="88" y="48" width="4" height="4"/>
+    <rect x="36" y="56" width="12" height="4"/>
+    <rect x="52" y="60" width="4" height="8"/>
+    <rect x="64" y="60" width="4" height="4"/>
+    <rect x="72" y="56" width="8" height="4"/>
+    <rect x="84" y="60" width="8" height="4"/>
+    <rect x="32" y="68" width="4" height="4"/>
+    <rect x="44" y="68" width="8" height="4"/>
+    <rect x="60" y="68" width="4" height="8"/>
+    <rect x="76" y="68" width="4" height="4"/>
+
+    <rect x="32" y="80" width="8" height="4"/>
+    <rect x="44" y="76" width="4" height="12"/>
+    <rect x="52" y="84" width="8" height="4"/>
+    <rect x="64" y="80" width="4" height="8"/>
+    <rect x="36" y="92" width="4" height="4"/>
+    <rect x="48" y="92" width="12" height="4"/>
+    <rect x="68" y="92" width="4" height="4"/>
+    <rect x="88" y="72" width="4" height="4"/>
+    <rect x="72" y="88" width="8" height="4"/>
+    <rect x="88" y="92" width="4" height="4"/>
+  </g>
+</svg>

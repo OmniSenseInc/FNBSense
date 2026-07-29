@@ -27,12 +27,17 @@ function Baris({ label, nilai }: { label: string; nilai: number }) {
  * tahu kosakata internal kita. Status tak dikenal jatuh ke teks apa adanya
  * supaya status baru di server tak bikin layar kosong.
  */
-function jelaskanStatus(status: string): { judul: string; isi: string } {
+function jelaskanStatus(status: string, adaQris: boolean): { judul: string; isi: string } {
   switch (status.toLowerCase()) {
     case 'pending':
       return {
         judul: 'Menunggu pembayaran',
-        isi: 'Bayar dengan scan QRIS di meja kasir. Halaman ini berubah sendiri setelah kasir memastikan pembayaranmu masuk.',
+        // Kalimatnya ikut QR-nya. Menyuruh "bayar di meja kasir" padahal
+        // QR-nya terpampang di layar membuat pelanggan bangkit tanpa perlu —
+        // persis kebalikan dari alasan fitur ini ada.
+        isi: adaQris
+          ? 'Bayar dengan QRIS berikut. Status akan beruba setelah kasir memastikan pembayaranmu masuk.'
+          : 'Bayar dengan QRIS berikut. Status akan beruba setelah kasir memastikan pembayaranmu masuk.',
       }
     case 'paid':
       return {
@@ -56,6 +61,12 @@ export default function HalamanStatus() {
   const { id } = useParams<{ id: string }>()
   const [pesanan, setPesanan] = useState<Pesanan | null>(null)
   const [galat, setGalat] = useState(false)
+
+  // Alamat gambar yang GAGAL dimuat, bukan sekadar penanda boolean. Bedanya
+  // nyata: kalau owner memperbaiki QRIS-nya, alamatnya berubah, dan blok
+  // pembayaran hidup lagi sendiri pada polling berikutnya — tanpa pelanggan
+  // perlu me-refresh, dan tanpa effect tambahan untuk mengatur ulang.
+  const [urlGagal, setUrlGagal] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -104,7 +115,10 @@ export default function HalamanStatus() {
     )
   }
 
-  const { judul, isi } = jelaskanStatus(pesanan.status)
+  // Server sudah menyaring: qrisImageUrl hanya terisi untuk pesanan yang masih
+  // menunggu bayar. Yang tersisa di sini cuma kasus gambarnya sendiri rusak.
+  const qris = pesanan.qrisImageUrl !== urlGagal ? pesanan.qrisImageUrl : null
+  const { judul, isi } = jelaskanStatus(pesanan.status, qris !== null)
 
   return (
     <div className="min-h-svh bg-white text-slate-900">
@@ -117,6 +131,44 @@ export default function HalamanStatus() {
           <p className="text-base font-semibold">{judul}</p>
           <p className="mt-1 text-sm text-slate-600">{isi}</p>
         </div>
+
+        {/* Blok bayar ditaruh SEBELUM rincian: yang dicari pelanggan saat
+            membuka halaman ini adalah cara membayar, dan kejutan angkanya
+            sudah dijinakkan di layar ringkasan sebelumnya. */}
+        {qris && (
+          <div className="mt-6 flex flex-col items-center gap-3 rounded-md border border-slate-200 p-4 text-center">
+            <div>
+              <p className="text-sm text-slate-600">Bayar sejumlah</p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {rupiah(pesanan.grand_total)}
+              </p>
+            </div>
+
+            {/* Latar putih dipaksa, bukan diwarisi: pemindai butuh kontras
+                gelap-di-terang, dan QRIS yang diunggah owner bisa saja PNG
+                transparan yang jadi tak terbaca di atas latar apa pun. */}
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <img
+                src={qris}
+                alt="Kode QRIS untuk membayar pesanan ini"
+                // Alamat rusak atau gambar hilang tak boleh meninggalkan ikon
+                // patah di layar orang yang sedang membayar — seluruh bloknya
+                // menghilang dan kalimat status kembali menyuruh ke kasir.
+                onError={() => setUrlGagal(pesanan.qrisImageUrl)}
+                className="block h-44 w-44 object-contain"
+              />
+            </div>
+
+            {/* Langkah-langkahnya ditulis karena kamera HP tak bisa memotret
+                layarnya sendiri. Tanpa petunjuk ini pelanggan menatap QR-nya
+                lalu tetap berjalan ke kasir. */}
+            <ol className="w-full list-inside list-decimal text-left text-sm text-slate-600">
+              <li>Tekan dan tahan gambar di atas, lalu simpan</li>
+              <li>Buka aplikasi bank atau e-wallet-mu</li>
+              <li>Pilih Scan QR, lalu ambil dari galeri</li>
+            </ol>
+          </div>
+        )}
 
         {/* Rincian penuh, bukan cuma total: inilah tempat pelanggan melihat
             kenapa angkanya beda dari subtotal menu tadi. Baris bernilai nol
