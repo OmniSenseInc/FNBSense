@@ -3,10 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateSettingRequest;
+use App\Http\Requests\UploadQrisRequest;
 use App\Models\OrderSetting;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Tarif transaksi outlet — owner saja.
@@ -17,6 +21,13 @@ use Illuminate\Http\Request;
  */
 class SettingController extends Controller
 {
+    /** Disk berkas publik — gambar QRIS harus terbaca pelanggan tanpa login. */
+    private const DISK = 'public';
+
+    /** Awalan URL hasil `php artisan storage:link`. */
+    private const PREFIX = '/storage/';
+
+
     public function show(Request $request): JsonResponse
     {
         $setting = $this->find($request)
@@ -48,6 +59,94 @@ class SettingController extends Controller
 
             return response()->json(['data' => $this->applyTo($pemenang, $request)]);
         }
+    }
+
+    /**
+     * Owner mengunggah gambar QRIS outlet ini.
+     *
+     * Berkas TIDAK pernah disimpan apa adanya. Ia dibongkar jadi piksel lalu
+     * ditulis ulang sebagai PNG baru, dan itulah pertahanan utamanya: apa pun
+     * yang diselipkan di metadata atau di ekor berkas tidak ikut terbawa,
+     * karena yang tersimpan adalah berkas yang KITA buat, bukan yang dikirim.
+     * Daftar-izin MIME di UploadQrisRequest menyaring lebih dulu; ini jaring
+     * kedua untuk hal-hal yang lolos dari pemeriksaan tipe.
+     */
+    public function uploadQris(UploadQrisRequest $request): JsonResponse
+    {
+        /** @var UploadedFile $berkas */
+        $berkas = $request->file('qris');
+        $bersih = $this->reencode($berkas);
+
+        if ($bersih === null) {
+            return response()->json(['message' => 'Berkas tidak bisa dibaca sebagai gambar.'], 422);
+        }
+
+        // Nama dibuat server. Nama asli dari pengunggah tak pernah menyentuh
+        // sistem berkas — di situlah path traversal biasanya masuk.
+        $jalur = 'qris/'.Str::uuid().'.png';
+        Storage::disk(self::DISK)->put($jalur, $bersih);
+
+        $setting = $this->find($request)
+            ?? OrderSetting::defaultsFor($this->tenantId($request), $this->outletId($request));
+
+        $lama = $setting->qris_image_url;
+        $setting->qris_image_url = self::PREFIX.$jalur;
+        $setting->save();
+
+        // Baru dihapus SETELAH yang baru tersimpan: kalau urutannya dibalik dan
+        // penyimpanan gagal, outlet kehilangan QRIS-nya tanpa punya gantinya.
+        $this->hapusBerkasLama($lama);
+
+        return response()->json(['data' => $setting]);
+    }
+
+    /**
+     * Gambar apa pun -> PNG berlatar putih. Null kalau isinya bukan gambar.
+     */
+    private function reencode(UploadedFile $berkas): ?string
+    {
+        $isi = @file_get_contents($berkas->getRealPath());
+        $sumber = $isi === false ? false : @imagecreatefromstring($isi);
+
+        if ($sumber === false) {
+            return null;
+        }
+
+        $lebar = imagesx($sumber);
+        $tinggi = imagesy($sumber);
+
+        // Latar putih dipaksa, bukan dipertahankan transparan: QRIS PNG
+        // beralpha menjadi hitam-di-atas-hitam saat diratakan, dan pemindai
+        // butuh kontras gelap-di-terang untuk bisa membacanya sama sekali.
+        $kanvas = imagecreatetruecolor($lebar, $tinggi);
+        imagefilledrectangle($kanvas, 0, 0, $lebar, $tinggi, imagecolorallocate($kanvas, 255, 255, 255));
+        imagecopy($kanvas, $sumber, 0, 0, 0, 0, $lebar, $tinggi);
+
+        ob_start();
+        imagepng($kanvas);
+        $hasil = (string) ob_get_clean();
+
+        imagedestroy($sumber);
+        imagedestroy($kanvas);
+
+        return $hasil;
+    }
+
+    /**
+     * Hapus berkas QRIS lama, kalau memang berkas yang kita simpan sendiri.
+     *
+     * Kolom yang sama juga bisa memuat URL eksternal (diisi lewat PUT settings),
+     * dan nilai yang pernah disentuh manusia tak boleh berubah jadi perintah
+     * hapus berkas. basename() membuang komponen jalur apa pun, jadi "../.."
+     * tak punya arti di sini.
+     */
+    private function hapusBerkasLama(?string $lama): void
+    {
+        if ($lama === null || ! str_starts_with($lama, self::PREFIX.'qris/')) {
+            return;
+        }
+
+        Storage::disk(self::DISK)->delete('qris/'.basename($lama));
     }
 
     private function applyTo(OrderSetting $setting, UpdateSettingRequest $request): OrderSetting

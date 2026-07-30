@@ -38,4 +38,9 @@ Route::middleware(['jwt', 'role:owner'])->group(function () {
 
     Route::get('settings', [SettingController::class, 'show']);
     Route::put('settings', [SettingController::class, 'update']);
+    // Unggah gambar QRIS. Endpoint sendiri, bukan menumpang PUT settings:
+    // yang satu multipart berisi berkas, yang lain JSON berisi angka tarif —
+    // menggabungkannya memaksa kedua jalur saling menanggung aturan yang tak
+    // relevan bagi mereka.
+    Route::post('settings/qris', [SettingController::class, 'uploadQris']);
 });
