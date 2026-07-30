@@ -1,0 +1,36 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+/**
+ * Pola proxy-nya sama persis dengan apps/customer, alasannya juga sama:
+ * browser hanya bicara ke port ini, Vite yang meneruskan ke Laravel di
+ * 127.0.0.1. Backend tak ikut terbuka ke jaringan, dan bagi browser semuanya
+ * satu origin sehingga CORS tak pernah ikut bermain.
+ *
+ * Bedanya: kasir bicara ke DUA service lain — IAM (login/refresh) dan Ordering
+ * (antrean & konfirmasi bayar). Catalog tak dipakai; kasir tak menyusun pesanan.
+ *
+ * Port dev sengaja beda dari apps/customer (5173) supaya dua app bisa hidup
+ * bersamaan saat mencoba alur penuh: memesan dari HP, mengonfirmasi dari laptop.
+ */
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+
+  server: {
+    host: true,
+    port: 5174,
+    proxy: {
+      '/iam': {
+        target: 'http://127.0.0.1:8002',
+        changeOrigin: true,
+        rewrite: (jalur) => jalur.replace(/^\/iam/, ''),
+      },
+      '/ordering': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        rewrite: (jalur) => jalur.replace(/^\/ordering/, ''),
+      },
+    },
+  },
+})
