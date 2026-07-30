@@ -248,6 +248,10 @@ class CashierOrderController extends Controller
             'service_charge_percent' => $order->service_charge_percent,
             'promotion' => $order->promotion_snapshot,
             'payment_method' => $order->payment_method,
+            // Petunjuk untuk kasir, BUKAN isian yang sudah terkunci: pelanggan
+            // boleh berubah pikiran di depan meja kasir, dan yang masuk laporan
+            // harus yang benar-benar diterima.
+            'payment_preference' => $order->payment_preference,
             'confirmed_by' => $order->confirmed_by,
             'confirmed_at' => $order->confirmed_at,
             'expires_at' => $order->expires_at,

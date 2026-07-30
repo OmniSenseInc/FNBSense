@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\OrderType;
+use App\Enums\PaymentMethod;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -41,6 +42,13 @@ class StoreOrderRequest extends FormRequest
             // qty 1..99 per item (skrutini #6).
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:99'],
             'items.*.note' => ['nullable', 'string', 'max:255'],
+            // NIAT pelanggan, bukan bukti bayar. Ia tak akan pernah mengisi
+            // payment_method — itu milik kasir, dan itulah yang masuk laporan.
+            //
+            // nullable+sometimes, bukan required: pelanggan yang belum memutuskan
+            // bukan pelanggan yang salah, dan order dari klien versi lama tak
+            // boleh tiba-tiba ditolak.
+            'payment_preference' => ['sometimes', 'nullable', Rule::enum(PaymentMethod::class)],
         ];
     }
 

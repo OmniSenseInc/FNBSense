@@ -131,6 +131,10 @@ class OrderController extends Controller
                     $order = new Order([
                         'order_type' => $data['order_type'],
                         'customer_name' => $data['customer_name'],
+                        // Niat bayar pelanggan. Disimpan apa adanya dan tak
+                        // pernah menyentuh payment_method — kasir yang mengisi
+                        // itu, setelah uangnya benar-benar ada.
+                        'payment_preference' => $data['payment_preference'] ?? null,
                     ]);
 
                     $order->tenant_id = $table->tenant_id;
@@ -196,6 +200,13 @@ class OrderController extends Controller
             return null;
         }
 
+        // Pelanggan yang menyatakan akan membayar tunai tak butuh QR. Menampilkannya
+        // tetap bukan sekadar berisik: ia mengundang orang memindai lalu membayar
+        // lagi di kasir — dua kali bayar untuk satu pesanan.
+        if ($order->inginTunai()) {
+            return null;
+        }
+
         return OrderSetting::query()
             ->where('outlet_id', $order->outlet_id)
             ->value('qris_image_url');
@@ -224,6 +235,10 @@ class OrderController extends Controller
             // dipakai app pelanggan.
             'payment' => [
                 'qris_image_url' => $this->qrisUntuk($order),
+                // Dikembalikan supaya layar bisa menjelaskan APA yang sedang
+                // ditunggu ("bayar di kasir" vs "pindai QR"), bukan cuma diam
+                // saat QR-nya sengaja tak ada.
+                'preference' => $order->payment_preference,
             ],
             'items' => $order->items->map(fn (OrderItem $item) => [
                 'product_id' => $item->product_id,

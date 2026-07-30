@@ -28,6 +28,11 @@ class Order extends Model
         'order_type',
         'customer_name',
         'note',
+        // Boleh fillable karena ia NIAT pelanggan, sederajat dengan
+        // customer_name — bukan uang, bukan status, bukan bukti bayar. Lihat
+        // migrasi payment_preference untuk kenapa ia tak boleh menyentuh
+        // payment_method.
+        'payment_preference',
     ];
 
     /**
@@ -45,6 +50,7 @@ class Order extends Model
             'order_type' => OrderType::class,
             'status' => OrderStatus::class,
             'payment_method' => PaymentMethod::class,
+            'payment_preference' => PaymentMethod::class,
             'gross_subtotal' => 'integer',
             'discount_total' => 'integer',
             'subtotal' => 'integer',
@@ -57,6 +63,18 @@ class Order extends Model
             'confirmed_at' => 'datetime',
             'expires_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Pelanggan menyatakan akan membayar tunai di kasir.
+     *
+     * Pengetahuannya ditaruh di sini, bukan di controller, supaya pemanggil tak
+     * perlu mengenal enum-nya — dan supaya "apa artinya memilih tunai" punya
+     * satu tempat saat nanti cara bayar bertambah.
+     */
+    public function inginTunai(): bool
+    {
+        return $this->payment_preference === PaymentMethod::Cash;
     }
 
     public function items(): HasMany
