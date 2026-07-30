@@ -143,10 +143,20 @@ export function petakanMenu(mentah: KategoriMentah[]): Kategori[] {
     .filter((k) => k.produk.length > 0)
 }
 
+/**
+ * Cara bayar yang DIINGINKAN pelanggan. Kosakatanya sengaja sama dengan server
+ * supaya tak ada penerjemahan di tengah jalan; layar yang menyebutnya "Tunai"
+ * dan "E-Payment".
+ *
+ * Ini niat, bukan bukti. Yang menentukan pesanan benar-benar lunas tetap kasir.
+ */
+export type CaraBayar = 'cash' | 'qris_static'
+
 export type PayloadPesanan = {
   qr_token: string
   order_type: 'dine_in'
   customer_name: string
+  payment_preference: CaraBayar
   items: Array<{ product_id: string; qty: number; note?: string }>
 }
 
@@ -164,11 +174,13 @@ export function susunPesanan(args: {
   qrToken: string
   nama: string
   isi: Keranjang
+  caraBayar: CaraBayar
 }): PayloadPesanan {
   return {
     qr_token: args.qrToken,
     order_type: 'dine_in',
     customer_name: args.nama.trim(),
+    payment_preference: args.caraBayar,
     items: Object.entries(args.isi).flatMap(([product_id, baris]) => {
       // floor sebelum bandingkan: 0.5 harus hilang, bukan jadi 1.
       const qty = Math.min(MAKS_QTY, Math.floor(baris.qty))
@@ -222,7 +234,19 @@ export type Pesanan = {
 export function bacaQris(payment: unknown): string | null {
   if (typeof payment !== 'object' || payment === null) return null
   const nilai = (payment as Record<string, unknown>).qris_image_url
-  return typeof nilai === 'string' && nilai.trim() !== '' ? nilai : null
+  if (typeof nilai !== 'string' || nilai.trim() === '') return null
+
+  const alamat = nilai.trim()
+
+  // Gambar hasil unggahan owner disimpan Ordering dan dikirim sebagai path
+  // relatif (`/storage/qris/...`) — relatif terhadap ORDERING, bukan terhadap
+  // app ini. Tanpa awalan ini browser mencarinya di alamat app pelanggan, tak
+  // menemukannya, dan blok pembayaran menghilang seolah QRIS belum dipasang.
+  //
+  // Alamat lengkap (http/https) dibiarkan apa adanya: owner boleh menaruh
+  // gambarnya di tempat lain, dan menempeli awalan pada URL yang sudah utuh
+  // justru merusaknya.
+  return alamat.startsWith('/') ? `${ORDERING}${alamat}` : alamat
 }
 
 /** Sama seperti harga menu: semua nilai uang datang sebagai string decimal. */

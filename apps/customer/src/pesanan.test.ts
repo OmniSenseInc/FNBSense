@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MAKS_NOTE, MAKS_QTY, susunPesanan } from './api'
 
-const DASAR = { qrToken: 'qr-abc', nama: 'Vincent' }
+const DASAR = { qrToken: 'qr-abc', nama: 'Vincent', caraBayar: 'cash' as const }
 
 /** Baris keranjang ringkas — catatan kosong adalah keadaan biasa, bukan kasus khusus. */
 const baris = (qty: number, note = '') => ({ qty, note })
@@ -12,8 +12,18 @@ describe('susunPesanan', () => {
       qr_token: 'qr-abc',
       order_type: 'dine_in',
       customer_name: 'Vincent',
+      payment_preference: 'cash',
       items: [{ product_id: 'prod-1', qty: 2 }],
     })
+  })
+
+  it('meneruskan cara bayar yang dipilih, bukan nilai tetap', () => {
+    // Kalau nilainya dipaku, semua pesanan tercatat berniat tunai — dan layar
+    // status akan menyembunyikan QRIS dari orang yang justru memilih membayar
+    // lewat QR.
+    const hasil = susunPesanan({ ...DASAR, caraBayar: 'qris_static', isi: { 'prod-1': baris(1) } })
+
+    expect(hasil.payment_preference).toBe('qris_static')
   })
 
   it('membuang item ber-qty 0 — pelanggan menaikkan lalu menurunkan lagi', () => {

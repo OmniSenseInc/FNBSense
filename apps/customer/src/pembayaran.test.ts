@@ -15,6 +15,21 @@ describe('bacaQris', () => {
     expect(bacaQris({ qris_image_url: ALAMAT })).toBe(ALAMAT)
   })
 
+  it('menempeli path relatif dengan alamat Ordering, bukan meneruskannya apa adanya', () => {
+    // Gambar unggahan owner tinggal di Ordering, sementara halaman ini
+    // dilayani app pelanggan. Path telanjang membuat browser mencarinya di
+    // alamat yang salah -> gambar tak ketemu -> blok pembayaran menghilang,
+    // persis seperti kalau owner belum memasang QRIS sama sekali.
+    const hasil = bacaQris({ qris_image_url: '/storage/qris/abc.png' })
+
+    expect(hasil).not.toBe('/storage/qris/abc.png')
+    expect(hasil?.endsWith('/storage/qris/abc.png')).toBe(true)
+  })
+
+  it('membiarkan URL lengkap apa adanya — menempeli awalan justru merusaknya', () => {
+    expect(bacaQris({ qris_image_url: ALAMAT })).toBe(ALAMAT)
+  })
+
   it('null saat server mengirim null — pesanan yang tak boleh menampilkan QR', () => {
     // Inilah jalur normal untuk pesanan sudah dibayar / batal / kedaluwarsa:
     // servernya yang memutuskan, layar tinggal menurut.

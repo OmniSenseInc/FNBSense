@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router'
-import { MAKS_ITEM, kirimPesanan, susunPesanan } from './api'
+import { MAKS_ITEM, kirimPesanan, susunPesanan, type CaraBayar } from './api'
 import { rupiah } from './format'
 import { useMeja } from './konteksMeja'
 
@@ -12,11 +12,26 @@ import { useMeja } from './konteksMeja'
  * kembali ke menu (bukan keluar dari app), dan tautannya bisa dibagikan ke
  * teman semeja.
  */
+/**
+ * Kosakata server ('cash'/'qris_static') diterjemahkan ke bahasa pelanggan di
+ * sini — satu-satunya tempat penerjemahan itu boleh terjadi. Keterangannya
+ * bukan hiasan: pilihan ini menentukan apa yang pelanggan lihat berikutnya.
+ */
+const CARA_BAYAR: Array<{ nilai: CaraBayar; label: string; jelas: string }> = [
+  { nilai: 'cash', label: 'Tunai', jelas: 'Bayar langsung di meja kasir.' },
+  { nilai: 'qris_static', label: 'E-Payment', jelas: 'Scan QRIS dari HP-mu, tanpa ke kasir.' },
+]
+
 export default function HalamanRingkasan() {
   const { qrToken, kategori, isi, hapusKeranjang } = useMeja()
   const navigate = useNavigate()
 
   const [nama, setNama] = useState('')
+  // Sengaja TANPA nilai awal. Memilihkan diam-diam berarti sebagian orang
+  // mengirim pesanan dengan cara bayar yang tak pernah mereka baca — dan
+  // pilihan ini menentukan apakah layar berikutnya menyodorkan QR atau
+  // menyuruhnya berjalan ke kasir.
+  const [caraBayar, setCaraBayar] = useState<CaraBayar | null>(null)
   const [mengirim, setMengirim] = useState(false)
   const [galatKirim, setGalatKirim] = useState('')
 
@@ -41,10 +56,14 @@ export default function HalamanRingkasan() {
   const terlaluBanyak = dipesan.length > MAKS_ITEM
 
   const kirim = async () => {
+    // Penjaga kedua, bukan cuma tombol yang mati: state bisa berubah di antara
+    // render dan klik, dan payload tanpa cara bayar akan ditolak server.
+    if (caraBayar === null) return
+
     setMengirim(true)
     setGalatKirim('')
     try {
-      const pesanan = await kirimPesanan(susunPesanan({ qrToken, nama, isi }))
+      const pesanan = await kirimPesanan(susunPesanan({ qrToken, nama, isi, caraBayar }))
       // HANYA setelah server menerimanya. Kalau pengiriman gagal, keranjang
       // justru wajib bertahan — itu seluruh alasan ia disimpan.
       setTerkirim(true)
@@ -130,14 +149,40 @@ export default function HalamanRingkasan() {
           </span>
         </label>
 
-        {/* Instruksi bayar sengaja hardcode — belum ada tempatnya di API. */}
-        <div className="mt-6 rounded-md bg-slate-50 p-3">
-          <p className="text-sm font-semibold">Cara bayar</p>
-          <p className="mt-1 text-sm text-slate-600">
-            Lakukan pembayaran dengan scan QRIS di meja kasir. Pesanan mulai
-            dibuat setelah kasir memastikan pembayaranmu masuk.
+        {/* radio sungguhan yang disembunyikan, bukan div ber-onClick: panah
+            keyboard berpindah pilihan, pembaca layar mengumumkan "1 dari 2",
+            dan statusnya terbaca tanpa perlu atribut aria buatan. */}
+        <fieldset className="mt-6">
+          <legend className="text-sm font-semibold">Cara bayar</legend>
+
+          <div className="mt-2 flex flex-col gap-2">
+            {CARA_BAYAR.map((cara) => (
+              <label
+                key={cara.nilai}
+                className={`flex cursor-pointer flex-col rounded-md border p-3 ${
+                  caraBayar === cara.nilai
+                    ? 'border-amber-700 bg-amber-50'
+                    : 'border-slate-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="cara-bayar"
+                  value={cara.nilai}
+                  checked={caraBayar === cara.nilai}
+                  onChange={() => setCaraBayar(cara.nilai)}
+                  className="sr-only"
+                />
+                <span className="text-base font-semibold">{cara.label}</span>
+                <span className="text-sm text-slate-600">{cara.jelas}</span>
+              </label>
+            ))}
+          </div>
+
+          <p className="mt-2 text-sm text-slate-600">
+            Pesanan mulai dibuat setelah kasir memastikan pembayaranmu masuk.
           </p>
-        </div>
+        </fieldset>
 
         {terlaluBanyak && (
           <p className="mt-4 text-sm font-semibold text-red-700">
@@ -155,7 +200,7 @@ export default function HalamanRingkasan() {
         <button
           type="button"
           onClick={kirim}
-          disabled={!namaValid || terlaluBanyak || mengirim}
+          disabled={!namaValid || caraBayar === null || terlaluBanyak || mengirim}
           className="mx-auto flex h-12 w-full max-w-md items-center justify-center rounded-md bg-amber-700 text-base font-semibold text-white active:bg-amber-800 disabled:opacity-40"
         >
           {/* Angka sengaja DIHILANGKAN dari tombol: menempelkan nominal di
