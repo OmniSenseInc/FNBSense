@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { totalKembar } from './antrean'
 import {
   ambilAntrean,
@@ -9,7 +10,7 @@ import {
   type CaraBayar,
   type Pesanan,
 } from './api'
-import { jam, rupiah, sisaMenit } from './format'
+import { jam, labelMeja, rupiah, sisaMenit } from './format'
 
 /**
  * Jeda polling. 5 detik: kasir baru boleh tahu ada pesanan masuk paling lambat
@@ -45,13 +46,9 @@ const CARA_BAYAR: Array<{ nilai: CaraBayar; label: string }> = [
  */
 type Aksi = { id: string; mode: 'bayar' | 'batal' }
 
-export default function LayarAntrean({
-  onKeluar,
-  onDibayar,
-}: {
-  onKeluar: () => void
-  onDibayar: (pesanan: Pesanan) => void
-}) {
+export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
+  const navigate = useNavigate()
+
   const [daftar, setDaftar] = useState<Pesanan[] | null>(null)
   const [galat, setGalat] = useState<string | null>(null)
   /** Kartu yang sedang membuka langkah kedua. Null = semua kartu tenang. */
@@ -110,7 +107,11 @@ export default function LayarAntrean({
       // Langsung ke nota. Inilah satu-satunya saat kasir memegang pesanan yang
       // baru saja lunas — memintanya mencarinya lagi di daftar cuma menambah
       // langkah di detik paling sibuk.
-      onDibayar(dibayar)
+      //
+      // Yang dibawa cuma id-nya; notanya membaca ulang sendiri dari server.
+      // Menitipkan salinan lewat state akan membuat alamat itu hidup HANYA
+      // saat didatangi dari sini — persis yang bikin cetak ulang mustahil.
+      navigate(`/nota/${dibayar.id}`)
     } catch (err) {
       if (err instanceof Error && err.message === SESI_HABIS) {
         keluarRef.current()
@@ -193,7 +194,18 @@ export default function LayarAntrean({
           {daftar?.map((pesanan) => (
             <li key={pesanan.id} className="rounded-md border border-slate-200 bg-white p-4">
               <div className="flex items-baseline justify-between gap-3">
-                <p className="text-lg font-semibold tabular-nums">{pesanan.order_number}</p>
+                {/* Meja berdiri sejajar nomor pesanan, bukan diselipkan di
+                    baris nama: saat notifikasi mutasi cuma membawa nominal,
+                    inilah kata pertama yang dicari kasir untuk menemukan
+                    orangnya. */}
+                <p className="text-lg font-semibold">
+                  <span className="tabular-nums">{pesanan.order_number}</span>
+                  {labelMeja(pesanan.meja, pesanan.tipe) && (
+                    <span className="ml-2 text-slate-600">
+                      · {labelMeja(pesanan.meja, pesanan.tipe)}
+                    </span>
+                  )}
+                </p>
                 <p className="text-sm text-slate-600">masuk {jam(pesanan.created_at)}</p>
               </div>
               <p className="text-sm text-slate-600">

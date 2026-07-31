@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { sisaMenit } from './format'
+import { labelMeja, sisaMenit } from './format'
+
+describe('labelMeja', () => {
+  it('memakai nama meja yang ditulis owner apa adanya', () => {
+    expect(labelMeja('Meja 4', 'dine_in')).toBe('Meja 4')
+  })
+
+  it('pesanan bawa pulang memang tak punya meja', () => {
+    expect(labelMeja(null, 'takeaway')).toBe('Bawa pulang')
+  })
+
+  it('dine-in tanpa meja tidak dikarang jadi "Bawa pulang"', () => {
+    // Mejanya dihapus setelah pesanan dibuat. Menulis "Bawa pulang" di sini
+    // menyuruh kasir mencari orang yang tak pernah antre di depannya.
+    expect(labelMeja(null, 'dine_in')).toBeNull()
+  })
+
+  it('tipe yang tak dikenal tidak menghasilkan penanda apa pun', () => {
+    expect(labelMeja(null, null)).toBeNull()
+  })
+})
 
 /**
  * Semua tanggal ditulis dengan offset +07:00 eksplisit, dan "sekarang" disuntik

@@ -41,7 +41,10 @@ class CashierOrderController extends Controller
                 $request->query('table_id'),
                 fn ($query, $tableId) => $query->where('table_id', $tableId),
             )
-            ->with('items')
+            // `table` di-eager-load, bukan dibiarkan lazy: tanpa ini satu antrean
+            // berisi 20 pesanan menembak 20 query tambahan hanya untuk mengambil
+            // 20 label meja.
+            ->with(['items', 'table'])
             ->orderBy('created_at')
             ->get();
 
@@ -52,7 +55,7 @@ class CashierOrderController extends Controller
 
     public function show(Request $request, string $id): JsonResponse
     {
-        $order = $this->findScoped($request, $id)->load('items');
+        $order = $this->findScoped($request, $id)->load(['items', 'table']);
 
         return response()->json(['data' => $this->present($order)]);
     }
@@ -106,7 +109,7 @@ class CashierOrderController extends Controller
             return $order;
         });
 
-        return response()->json(['data' => $this->present($order->load('items'))]);
+        return response()->json(['data' => $this->present($order->load(['items', 'table']))]);
     }
 
     /**
@@ -146,7 +149,7 @@ class CashierOrderController extends Controller
             return $order;
         });
 
-        return response()->json(['data' => $this->present($order->load('items'))]);
+        return response()->json(['data' => $this->present($order->load(['items', 'table']))]);
     }
 
     /**
@@ -238,6 +241,15 @@ class CashierOrderController extends Controller
             'customer_name' => $order->customer_name,
             'status' => $order->status,
             'table_id' => $order->table_id,
+            // Label meja, bukan model Table-nya. Yang dikirim dipilih satu per
+            // satu supaya `qr_token` — kredensial cetak yang membuka meja itu
+            // bagi siapa pun yang memegangnya — tak pernah punya jalan ikut
+            // terserialisasi ke layar kasir.
+            //
+            // null untuk takeaway (tak punya meja) DAN untuk meja yang sudah
+            // dihapus. Kasir tak boleh disuguhi tebakan; layar yang memutuskan
+            // apa yang ditulis saat labelnya tak ada.
+            'table_label' => $order->table?->label,
             'gross_subtotal' => $order->gross_subtotal,
             'discount_total' => $order->discount_total,
             'subtotal' => $order->subtotal,

@@ -232,6 +232,14 @@ export type Pesanan = {
   caraBayar: string | null
   /** Niat pelanggan saat memesan. Petunjuk, bukan keputusan. */
   niatBayar: string | null
+  /**
+   * Nama meja seperti yang ditulis owner, mis. "Meja 4". null untuk takeaway
+   * dan untuk meja yang sudah dihapus — server tak menebak, layar yang memutus
+   * apa yang ditulis.
+   */
+  meja: string | null
+  /** `dine_in` | `takeaway` apa adanya dari server. */
+  tipe: string | null
   waktuBayar: string | null
   created_at: string | null
   /**
@@ -271,6 +279,8 @@ export function petakanPesanan(m: Record<string, unknown>): Pesanan {
     pajak: keAngka(m.tax),
     caraBayar: typeof m.payment_method === 'string' ? m.payment_method : null,
     niatBayar: typeof m.payment_preference === 'string' ? m.payment_preference : null,
+    meja: typeof m.table_label === 'string' ? m.table_label : null,
+    tipe: typeof m.order_type === 'string' ? m.order_type : null,
     waktuBayar: m.confirmed_at ? String(m.confirmed_at) : null,
     created_at: m.created_at ? String(m.created_at) : null,
     expires_at: m.expires_at ? String(m.expires_at) : null,
@@ -292,6 +302,23 @@ export function petakanPesanan(m: Record<string, unknown>): Pesanan {
 export async function ambilAntrean(): Promise<Pesanan[]> {
   const data = await panggil<Record<string, unknown>[]>('/api/cashier/orders?status=pending')
   return Array.isArray(data) ? data.map(petakanPesanan) : []
+}
+
+/**
+ * Satu pesanan, dibaca ulang dari server.
+ *
+ * Nota SELALU dirakit dari sini, tak pernah dari salinan yang dititipkan layar
+ * antrean. Dua alasan: hanya jawaban server yang memuat waktu konfirmasi dan
+ * cara bayar yang benar-benar tercatat, dan cetak ulang — yang bisa terjadi
+ * berjam-jam kemudian dari layar riwayat — tak punya salinan apa pun untuk
+ * dibawa.
+ */
+export async function ambilPesanan(id: string): Promise<Pesanan> {
+  const data = await panggil<Record<string, unknown>>(
+    `/api/cashier/orders/${encodeURIComponent(id)}`,
+  )
+
+  return petakanPesanan(data)
 }
 
 /**

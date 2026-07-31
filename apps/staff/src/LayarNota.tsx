@@ -1,4 +1,6 @@
-import { type Pesanan } from './api'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useParams } from 'react-router'
+import { ambilPesanan, SESI_HABIS, type Pesanan } from './api'
 import { jam, rupiah } from './format'
 
 const NAMA_KAFE = import.meta.env.VITE_NAMA_KAFE ?? 'Nota Pembayaran'
@@ -12,23 +14,67 @@ const LABEL_BAYAR: Record<string, string> = {
 /**
  * Nota pembayaran yang siap dicetak.
  *
+ * Pesanannya DIAMBIL SENDIRI dari id di alamat, bukan diterima sebagai prop
+ * dari layar antrean. Itu yang membuat cetak ulang mungkin: nota yang cuma bisa
+ * dirakit dari salinan hasil konfirmasi ikut mati begitu kasir meninggalkan
+ * layarnya, dan pelanggan yang kembali setengah jam kemudian tak bisa dilayani.
+ *
  * Mencetak lewat window.print() dan CSS, bukan lewat pustaka atau agen ESC/POS:
  * printer thermal muncul sebagai printer biasa di sistem operasi, jadi browser
- * sudah bisa mengirim ke sana tanpa satu pun dependensi baru. Cetak-langsung
- * tanpa dialog baru layak dibangun kalau dialognya benar-benar terasa
- * mengganggu setelah dipakai sungguhan.
+ * sudah bisa mengirim ke sana tanpa satu pun dependensi baru.
  *
  * Semua angka diambil apa adanya dari jawaban server. Layar ini tak menjumlah
  * dan tak mengalikan apa pun — kertas yang dipegang pelanggan tak boleh bisa
  * berbeda dari yang tercatat di pembukuan.
  */
-export default function LayarNota({
-  pesanan,
-  onKembali,
-}: {
-  pesanan: Pesanan
-  onKembali: () => void
-}) {
+export default function LayarNota({ onKeluar }: { onKeluar: () => void }) {
+  const { id } = useParams<{ id: string }>()
+  const [pesanan, setPesanan] = useState<Pesanan | null>(null)
+  const [galat, setGalat] = useState<string | null>(null)
+
+  // Lewat ref supaya identitas fungsi dari App tak pernah memicu pengambilan
+  // ulang yang tak perlu.
+  const keluarRef = useRef(onKeluar)
+  keluarRef.current = onKeluar
+
+  useEffect(() => {
+    if (!id) return
+
+    let batal = false
+
+    ambilPesanan(id)
+      .then((hasil) => {
+        if (batal) return
+        setPesanan(hasil)
+        setGalat(null)
+      })
+      .catch((err: unknown) => {
+        if (batal) return
+        // Sesi habis -> pulangkan ke login. Alamat nota tetap, jadi kasir
+        // kembali ke nota yang sama begitu masuk lagi.
+        if (err instanceof Error && err.message === SESI_HABIS) {
+          keluarRef.current()
+          return
+        }
+        setGalat(err instanceof Error ? err.message : 'Gagal memuat nota.')
+      })
+
+    return () => {
+      batal = true
+    }
+  }, [id])
+
+  if (pesanan === null) {
+    return (
+      <div className="min-h-svh bg-slate-100 text-slate-900">
+        <Kepala bisaCetak={false} />
+        <p role={galat ? 'alert' : undefined} className="px-4 py-16 text-center text-sm">
+          {galat ?? 'Memuat nota…'}
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-svh bg-slate-100 text-slate-900">
       {/* Lebar kertas struk yang lazim. Margin nol supaya tak ada tepi kosong
@@ -41,23 +87,7 @@ export default function LayarNota({
         }
       `}</style>
 
-      <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
-        <button
-          type="button"
-          onClick={onKembali}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-        >
-          ← Antrean
-        </button>
-        <p className="text-sm text-slate-600">Pembayaran tercatat</p>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-        >
-          Cetak
-        </button>
-      </header>
+      <Kepala bisaCetak />
 
       <main className="mx-auto my-6 w-[58mm] bg-white p-3 text-[11px] leading-snug text-black print:my-0 print:w-full print:p-2">
         <div className="text-center">
@@ -68,6 +98,9 @@ export default function LayarNota({
 
         <div className="mt-2 border-t border-dashed border-black pt-2">
           <p>Nama: {pesanan.customer_name}</p>
+          {/* Meja ikut tercetak: pelanggan yang kembali membawa struk ini
+              memberi kasir satu petunjuk lagi untuk menemukan pesanannya. */}
+          {pesanan.meja && <p>Meja: {pesanan.meja}</p>}
           {/* Ditulis di nota, bukan cuma di layar: kalau kelak ada selisih kas,
               inilah satu-satunya bukti cetak cara bayar yang dicatat kasir. */}
           <p>
@@ -109,6 +142,35 @@ export default function LayarNota({
         <p className="mt-3 text-center">Terima kasih</p>
       </main>
     </div>
+  )
+}
+
+/**
+ * Bar atas. Tombol cetak disembunyikan selama notanya belum ada — menawarkan
+ * cetak untuk layar kosong cuma menghasilkan kertas kosong.
+ */
+function Kepala({ bisaCetak }: { bisaCetak: boolean }) {
+  return (
+    <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
+      {/* Link, bukan tombol history.back(): nota bisa dibuka langsung dari
+          alamatnya (cetak ulang, tab baru), dan di situ tak ada halaman
+          sebelumnya untuk dikembalikan. */}
+      <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+        ← Antrean
+      </Link>
+      <p className="text-sm text-slate-600">Pembayaran tercatat</p>
+      {bisaCetak ? (
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+        >
+          Cetak
+        </button>
+      ) : (
+        <span />
+      )}
+    </header>
   )
 }
 

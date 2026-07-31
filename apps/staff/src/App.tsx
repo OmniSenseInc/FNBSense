@@ -1,44 +1,51 @@
 import { useState } from 'react'
-import { bacaToken, type Pesanan } from './api'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { bacaToken } from './api'
 import LayarAntrean from './LayarAntrean'
 import LayarLogin from './LayarLogin'
 import LayarNota from './LayarNota'
 
 /**
- * Kerangka app kasir. Sengaja TANPA router: hari ini cuma ada satu layar kerja,
- * dan "sudah login atau belum" bukan alamat yang perlu bisa dibagikan atau
- * di-bookmark. Router masuk bersama layar /kds nanti, saat benar-benar ada dua
- * tujuan yang berbeda.
+ * Kerangka rute app kasir.
+ *
+ * Router masuk begitu nota berhenti jadi layar sekali-lewat. Selama ia cuma
+ * hidup beberapa detik sesudah konfirmasi, alamat memang ongkos tanpa manfaat.
+ * Begitu nota harus bisa DIBUKA ULANG, "bisa dibuka kapan saja" dan "punya
+ * alamat" jadi satu hal yang sama.
+ *
+ * Login sengaja TETAP bukan alamat: "sudah masuk atau belum" bukan tujuan yang
+ * perlu dibagikan atau di-bookmark, dan menjadikannya rute berarti menambah
+ * penjaga di setiap rute lain untuk pertanyaan yang jawabannya sama di
+ * mana-mana.
  */
 export default function App() {
   // Dibaca sekali saat mount: kasir yang me-refresh tab di tengah shift tak
   // perlu login ulang. Token yang ternyata sudah mati ketahuan pada permintaan
-  // pertama, dan LayarAntrean yang memulangkannya ke sini.
+  // pertama, dan layarnyalah yang memulangkannya ke sini.
   const [masuk, setMasuk] = useState(() => bacaToken() !== null)
 
-  // Pesanan yang baru saja lunas, menunggu dicetak. State, bukan alamat:
-  // nota cuma relevan beberapa detik setelah konfirmasi, dan menambah router
-  // untuk satu tujuan itu ongkos yang belum terbayar. Akibatnya yang diterima:
-  // me-refresh browser saat di layar nota kembali ke antrean.
-  const [nota, setNota] = useState<Pesanan | null>(null)
-
-  if (!masuk) {
-    return <LayarLogin onMasuk={() => setMasuk(true)} />
-  }
-
-  if (nota !== null) {
-    return <LayarNota pesanan={nota} onKembali={() => setNota(null)} />
-  }
+  const keluar = () => setMasuk(false)
 
   return (
-    <LayarAntrean
-      onKeluar={() => {
-        // Nota ikut dibuang saat sesi berakhir: ia memuat nama pelanggan dan
-        // rincian belanjanya, dan layar kasir sering ditinggal tanpa penjaga.
-        setNota(null)
-        setMasuk(false)
-      }}
-      onDibayar={setNota}
-    />
+    <BrowserRouter>
+      {masuk ? (
+        <Routes>
+          <Route path="/" element={<LayarAntrean onKeluar={keluar} />} />
+          {/* Nota memakai id pesanan, bukan nomor pesanan: nomor dibangkitkan
+              acak dan diulang saat bentrok, sedangkan id yang dipegang server
+              tunggal. Alamat harus menunjuk satu pesanan, bukan sekumpulan
+              yang kebetulan bernomor sama. */}
+          <Route path="/nota/:id" element={<LayarNota onKeluar={keluar} />} />
+          {/* Alamat asing dikembalikan ke antrean, bukan dibiarkan jadi layar
+              putih — kasir tak punya cara menebak apa yang salah. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      ) : (
+        // Alamatnya sengaja tak diubah saat sesi berakhir: kasir yang tokennya
+        // kedaluwarsa di layar nota kembali ke nota yang sama setelah masuk
+        // lagi, bukan dilempar ke antrean dan disuruh mencarinya ulang.
+        <LayarLogin onMasuk={() => setMasuk(true)} />
+      )}
+    </BrowserRouter>
   )
 }

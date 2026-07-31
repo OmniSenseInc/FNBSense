@@ -14,6 +14,8 @@ function pesanan(id: string, grandTotal: number): Pesanan {
     pajak: 0,
     caraBayar: null,
     niatBayar: null,
+    meja: null,
+    tipe: null,
     waktuBayar: null,
     created_at: null,
     expires_at: null,

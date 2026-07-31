@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Models\Order;
 use App\Models\Outbox;
+use App\Models\Table;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\Concerns\MintsToken;
@@ -52,6 +53,7 @@ class CashierOrderTest extends TestCase
         OrderStatus $status = OrderStatus::Pending,
         ?string $tenantId = null,
         ?string $outletId = null,
+        ?string $tableId = null,
     ): Order {
         $order = new Order([
             'order_type' => OrderType::DineIn->value,
@@ -59,6 +61,7 @@ class CashierOrderTest extends TestCase
         ]);
         $order->tenant_id = $tenantId ?? $this->tenantId;
         $order->outlet_id = $outletId ?? $this->outletId;
+        $order->table_id = $tableId;
         $order->order_number = strtoupper(Str::random(6));
         $order->gross_subtotal = 20000;
         $order->discount_total = 0;
@@ -99,6 +102,53 @@ class CashierOrderTest extends TestCase
             ->getJson('/api/cashier/orders')
             ->assertOk()
             ->assertJsonCount(2, 'data');
+    }
+
+    /**
+     * Kasir melihat NAMA mejanya, bukan UUID-nya.
+     *
+     * Ini pembeda terkuat yang dipunya kasir saat dua pesanan bertotal sama
+     * masuk berbarengan — notifikasi mutasi QRIS statis tak membawa apa pun
+     * selain nominal, jadi meja yang menentukan siapa yang sedang membayar.
+     */
+    public function test_antrean_menyertakan_label_meja(): void
+    {
+        $meja = Table::createForOutlet($this->tenantId, $this->outletId, ['label' => 'Meja 4']);
+        $this->makeOrder(OrderStatus::Pending, null, null, $meja->id);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson('/api/cashier/orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.table_label', 'Meja 4');
+    }
+
+    /**
+     * qr_token TAK BOLEH ikut, walau relasi meja sekarang di-eager-load.
+     *
+     * Ia kredensial cetak: siapa pun yang memegangnya bisa membuka meja itu
+     * dan memesan atas namanya. present() memilih kolom satu per satu justru
+     * supaya kolom baru di tabel `tables` tak pernah ikut hanyut ke layar.
+     */
+    public function test_antrean_tidak_membocorkan_qr_token_meja(): void
+    {
+        $meja = Table::createForOutlet($this->tenantId, $this->outletId, ['label' => 'Meja 4']);
+        $this->makeOrder(OrderStatus::Pending, null, null, $meja->id);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson('/api/cashier/orders')
+            ->assertOk()
+            ->assertDontSee($meja->qr_token);
+    }
+
+    /** Takeaway tak punya meja -> null, bukan teks kosong yang menyamar label. */
+    public function test_pesanan_tanpa_meja_berlabel_null(): void
+    {
+        $this->makeOrder();
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson('/api/cashier/orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.table_label', null);
     }
 
     /** Filter status bergigi: paid tak muncul saat minta pending. */

@@ -93,6 +93,15 @@ describe('petakanPesanan', () => {
     expect(hasil.items[0].hargaSatuan).toBe(22000)
   })
 
+  it('memetakan label meja dan tipe pesanan', () => {
+    // Nama fieldnya `table_label`, bukan `table`: server sengaja mengirim
+    // labelnya saja supaya qr_token meja tak punya jalan ikut terserialisasi.
+    const hasil = petakanPesanan({ ...mentah, table_label: 'Meja 4', order_type: 'dine_in' })
+
+    expect(hasil.meja).toBe('Meja 4')
+    expect(hasil.tipe).toBe('dine_in')
+  })
+
   it('meneruskan tenggat bayar apa adanya dari server', () => {
     // Layar TIDAK menghitung tenggat sendiri dari created_at: angkanya berasal
     // dari order_expiry_minutes milik outlet yang boleh diubah owner kapan saja.

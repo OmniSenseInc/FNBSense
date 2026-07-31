@@ -15,6 +15,22 @@ export function rupiah(nilai: number): string {
 }
 
 /**
+ * Penanda tempat di kepala kartu: nama meja, "Bawa pulang", atau tak ada.
+ *
+ * Inilah pembeda terkuat yang dipegang kasir saat dua pesanan bertotal sama
+ * masuk berbarengan — notifikasi mutasi QRIS statis tak membawa apa pun selain
+ * nominal, jadi mejalah yang menentukan siapa yang sedang berdiri di depannya.
+ */
+export function labelMeja(meja: string | null, tipe: string | null): string | null {
+  if (meja) return meja
+  // Tanpa meja TAPI bukan takeaway berarti datanya sendiri janggal (mejanya
+  // dihapus setelah pesanan dibuat). Diam lebih baik daripada menulis "Bawa
+  // pulang" untuk pesanan yang sebenarnya sedang duduk di sebuah meja — kasir
+  // akan mencari orang yang tak pernah antre di depan.
+  return tipe === 'takeaway' ? 'Bawa pulang' : null
+}
+
+/**
  * Sisa waktu sampai pesanan kedaluwarsa, dibulatkan KE ATAS ke menit.
  *
  * Menit, bukan detik: angka yang berdetak tiap detik menarik mata kasir ke
