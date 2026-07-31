@@ -53,8 +53,14 @@ foreach ($l in $layanan) {
 }
 
 Write-Host ""
-Write-Host "Pelanggan : http://localhost:5173/t/<qr_token>"
-Write-Host "Kasir     : http://localhost:5174"
+Write-Host "Kasir : http://localhost:5174"
+Write-Host ""
+# Alamat pelanggan TIDAK dicetak sebagai contoh berpola. Versi sebelumnya
+# menulis '/t/<qr_token>', dan bentuknya terlalu mirip alamat siap salin —
+# begitu disalin apa adanya, server membalas 404 dan app pelanggan berkata
+# "scan QR di meja", yang menuntun ke dugaan yang sama sekali keliru.
+Write-Host "Alamat pelanggan (token asli tiap meja):" -ForegroundColor Cyan
+Write-Host "  cd services\ordering; php artisan meja:daftar"
 Write-Host ""
 Write-Host "Kalau menu tetap tak muncul, pastikan port memang benar:" -ForegroundColor Cyan
 Write-Host '  Get-CimInstance Win32_Process -Filter "Name=''php.exe''" | Select-Object CommandLine'
