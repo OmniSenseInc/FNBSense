@@ -21,6 +21,14 @@ $layanan = @(
     @{ Nama = 'iam';      Jalur = 'services\iam';      Port = 8002; Perintah = 'php artisan serve --port=8002' }
     @{ Nama = 'customer'; Jalur = 'apps\customer';     Port = 5173; Perintah = 'npm run dev' }
     @{ Nama = 'staff';    Jalur = 'apps\staff';        Port = 5174; Perintah = 'npm run dev' }
+    # Tanpa ini `orders:expire` TIDAK PERNAH jalan di pengembangan, dan itu
+    # menyesatkan dengan cara yang mahal: pesanan menumpuk sebagai PENDING
+    # selamanya, hitung mundur di kartu kasir menghitung ke tenggat yang tak
+    # pernah tiba, dan status `expired` mustahil diuji lewat layar. Produksi
+    # memakai cron; di sini `schedule:work` yang menirunya.
+    #
+    # Port $null: ia tak mendengarkan apa pun, jadi tak ikut pemeriksaan bentrok.
+    @{ Nama = 'jadwal';   Jalur = 'services\ordering'; Port = $null; Perintah = 'php artisan schedule:work' }
 )
 
 # Port diperiksa SEMUA dulu, sebelum menyalakan apa pun. Kalau tidak, sebagian
@@ -28,6 +36,7 @@ $layanan = @(
 # sama — separuh benar justru lebih menyesatkan daripada mati total.
 $bentrok = @()
 foreach ($l in $layanan) {
+    if ($null -eq $l.Port) { continue }
     $dipakai = Get-NetTCPConnection -State Listen -LocalPort $l.Port -ErrorAction SilentlyContinue
     if ($dipakai) {
         $prosesId = ($dipakai | Select-Object -First 1).OwningProcess
@@ -48,7 +57,8 @@ if ($bentrok.Count -gt 0) {
 
 foreach ($l in $layanan) {
     $kerja = Join-Path $root $l.Jalur
-    Write-Host "menyalakan $($l.Nama) di port $($l.Port)"
+    $di = if ($null -eq $l.Port) { '' } else { " di port $($l.Port)" }
+    Write-Host "menyalakan $($l.Nama)$di"
     Start-Process powershell -ArgumentList '-NoExit', '-Command', "Set-Location '$kerja'; $($l.Perintah)"
 }
 
