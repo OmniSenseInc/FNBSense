@@ -312,7 +312,15 @@ export async function ambilAntrean(): Promise<Pesanan[]> {
  * di antrean.ts soal kenapa itu sementara.
  */
 export async function ambilRiwayat(): Promise<Pesanan[]> {
-  const data = await panggil<Record<string, unknown>[]>('/api/cashier/orders?status=paid')
+  // Tengah malam menurut jam PERANGKAT ini, dikirim sebagai instan UTC. Server
+  // yang memangkasnya, jadi layar tak pernah mengunduh sejarah berbulan-bulan
+  // hanya untuk membuang hampir semuanya.
+  const sejak = new Date()
+  sejak.setHours(0, 0, 0, 0)
+
+  const data = await panggil<Record<string, unknown>[]>(
+    `/api/cashier/orders?status=paid&paid_since=${encodeURIComponent(sejak.toISOString())}`,
+  )
 
   return Array.isArray(data) ? data.map(petakanPesanan) : []
 }

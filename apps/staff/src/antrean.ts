@@ -28,12 +28,12 @@ import { type Pesanan } from './api'
  * pucuk — karena itu urutannya terbalik dari antrean, yang justru mendahulukan
  * yang paling lama menunggu.
  *
- * ponytail: penyaringan hari dilakukan di LAYAR, sesudah server mengirim
- * SELURUH pesanan berstatus paid — `index()` cuma menyaring status dan
- * table_id. Nyaman hari ini, tapi tumbuh diam-diam: kafe yang jalan setahun
- * mengunduh setahun riwayat setiap kali layar ini dibuka. Jalan keluarnya
- * parameter `since` di Ordering (ingat: tanggal dari klien = masukan tak
- * tepercaya, wajib divalidasi di FormRequest, jangan disuap mentah ke where()).
+ * Server SUDAH memangkas lewat `paid_since` (lihat `ambilRiwayat()`), jadi yang
+ * tiba di sini tinggal sehari terakhir. Penyaringan ulang di layar tetap ada
+ * dan bukan mubazir: batas server dihitung dari tengah malam menurut jam
+ * PERANGKAT ini, sedangkan yang menentukan benar-salahnya "hari ini" bagi kasir
+ * juga jam perangkat itu. Lapisan ini yang menjaga keduanya tak pernah berselisih
+ * seandainya zona waktu server berbeda.
  */
 export function riwayatHariIni(daftar: Pesanan[], sekarang: number = Date.now()): Pesanan[] {
   const acuan = new Date(sekarang)

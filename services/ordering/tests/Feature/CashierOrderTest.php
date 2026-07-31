@@ -151,6 +151,61 @@ class CashierOrderTest extends TestCase
             ->assertJsonPath('data.0.table_label', null);
     }
 
+    /**
+     * `paid_since` membuang pesanan yang dibayar sebelum batas itu.
+     *
+     * Tanpa penyaring ini layar riwayat mengunduh SELURUH sejarah outlet setiap
+     * kali dibuka — nyaman di kafe berumur seminggu, tak lagi begitu di kafe
+     * berumur setahun.
+     */
+    public function test_paid_since_menyaring_pesanan_yang_dibayar_sebelum_batas(): void
+    {
+        $lama = $this->makeOrder(OrderStatus::Paid);
+        $lama->confirmed_at = now()->subDays(3);
+        $lama->save();
+
+        $baru = $this->makeOrder(OrderStatus::Paid);
+        $baru->confirmed_at = now();
+        $baru->save();
+
+        $url = '/api/cashier/orders?'.http_build_query([
+            'status' => 'paid',
+            'paid_since' => now()->startOfDay()->toIso8601String(),
+        ]);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_number', $baru->order_number);
+    }
+
+    /** Tanggal karangan ditolak, bukan diteruskan jadi operand SQL. */
+    public function test_paid_since_yang_bukan_tanggal_ditolak(): void
+    {
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson('/api/cashier/orders?paid_since=kemarin+sore')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('paid_since');
+    }
+
+    /**
+     * Status karangan ditolak, bukan dibalas daftar kosong.
+     *
+     * Sebelum divalidasi, `?status=lunas` membalas 200 dengan data kosong — di
+     * layar itu tak bisa dibedakan dari "memang belum ada pesanan", jadi salah
+     * ketik di klien berubah jadi antrean yang tampak bersih.
+     */
+    public function test_status_yang_tak_dikenal_ditolak(): void
+    {
+        $this->makeOrder(OrderStatus::Pending);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->getJson('/api/cashier/orders?status=lunas')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+    }
+
     /** Filter status bergigi: paid tak muncul saat minta pending. */
     public function test_antrean_bisa_difilter_status(): void
     {

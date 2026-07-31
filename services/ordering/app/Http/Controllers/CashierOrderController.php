@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Enums\OrderStatus;
 use App\Http\Requests\CancelOrderRequest;
 use App\Http\Requests\ConfirmPaymentRequest;
+use App\Http\Requests\ListOrdersRequest;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Outbox;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +30,7 @@ class CashierOrderController extends Controller
     /**
      * Antrean order outlet ini. Filter opsional: status, table_id.
      */
-    public function index(Request $request): JsonResponse
+    public function index(ListOrdersRequest $request): JsonResponse
     {
         $orders = Order::query()
             ->where('tenant_id', $this->tenantId($request))
@@ -40,6 +42,24 @@ class CashierOrderController extends Controller
             ->when(
                 $request->query('table_id'),
                 fn ($query, $tableId) => $query->where('table_id', $tableId),
+            )
+            // Batas bawah waktu BAYAR — dipakai layar riwayat supaya ia tak
+            // mengunduh seluruh sejarah outlet tiap kali dibuka.
+            //
+            // Menyaring confirmed_at, bukan created_at: yang dicari kasir adalah
+            // "dibayar hari ini", dan pesanan kemarin yang baru dilunasi pagi ini
+            // memang termasuk. Konsekuensi yang disengaja: dipakai bersama
+            // status=pending hasilnya selalu kosong, sebab pesanan yang belum
+            // dibayar tak punya confirmed_at sama sekali.
+            ->when(
+                $request->query('paid_since'),
+                // Diurai jadi Carbon dulu, tidak disuap sebagai string apa
+                // adanya: klien mengirim ISO-8601 ber-offset ("...T17:00:00Z"),
+                // dan MySQL membandingkan bentuk itu terhadap kolom DATETIME
+                // tanpa mengeluh — cuma hasilnya yang meleset sejauh offsetnya.
+                // Aman karena 'date' di ListOrdersRequest sudah menyaring lebih
+                // dulu, jadi parse() di sini tak pernah menerima sampah.
+                fn ($query, $sejak) => $query->where('confirmed_at', '>=', Carbon::parse($sejak)),
             )
             // `table` di-eager-load, bukan dibiarkan lazy: tanpa ini satu antrean
             // berisi 20 pesanan menembak 20 query tambahan hanya untuk mengambil
