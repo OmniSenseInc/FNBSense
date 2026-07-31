@@ -4,6 +4,7 @@ import { bacaToken } from './api'
 import LayarAntrean from './LayarAntrean'
 import LayarLogin from './LayarLogin'
 import LayarNota from './LayarNota'
+import LayarRiwayat from './LayarRiwayat'
 
 /**
  * Kerangka rute app kasir.
@@ -35,6 +36,7 @@ export default function App() {
               acak dan diulang saat bentrok, sedangkan id yang dipegang server
               tunggal. Alamat harus menunjuk satu pesanan, bukan sekumpulan
               yang kebetulan bernomor sama. */}
+          <Route path="/riwayat" element={<LayarRiwayat onKeluar={keluar} />} />
           <Route path="/nota/:id" element={<LayarNota onKeluar={keluar} />} />
           {/* Alamat asing dikembalikan ke antrean, bukan dibiarkan jadi layar
               putih — kasir tak punya cara menebak apa yang salah. */}

@@ -305,6 +305,19 @@ export async function ambilAntrean(): Promise<Pesanan[]> {
 }
 
 /**
+ * Pesanan yang SUDAH dibayar di outlet ini.
+ *
+ * Filter status ditegakkan server, sama seperti antrean. Penyaringan "hari ini"
+ * dan urutannya dikerjakan `riwayatHariIni()` di layar — lihat catatan ceiling
+ * di antrean.ts soal kenapa itu sementara.
+ */
+export async function ambilRiwayat(): Promise<Pesanan[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/cashier/orders?status=paid')
+
+  return Array.isArray(data) ? data.map(petakanPesanan) : []
+}
+
+/**
  * Satu pesanan, dibaca ulang dari server.
  *
  * Nota SELALU dirakit dari sini, tak pernah dari salinan yang dititipkan layar

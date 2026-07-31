@@ -20,6 +20,45 @@ import { type Pesanan } from './api'
  *
  * Dihitung dari daftar yang sudah dimuat — nol permintaan tambahan ke server.
  */
+/**
+ * Pesanan yang dibayar pada hari yang sama dengan `sekarang`, terbaru dulu.
+ *
+ * Kasir membuka riwayat untuk satu alasan: seseorang kembali dan minta notanya
+ * dicetak ulang. Orang itu baru saja pergi, jadi yang dicari selalu ada di
+ * pucuk — karena itu urutannya terbalik dari antrean, yang justru mendahulukan
+ * yang paling lama menunggu.
+ *
+ * ponytail: penyaringan hari dilakukan di LAYAR, sesudah server mengirim
+ * SELURUH pesanan berstatus paid — `index()` cuma menyaring status dan
+ * table_id. Nyaman hari ini, tapi tumbuh diam-diam: kafe yang jalan setahun
+ * mengunduh setahun riwayat setiap kali layar ini dibuka. Jalan keluarnya
+ * parameter `since` di Ordering (ingat: tanggal dari klien = masukan tak
+ * tepercaya, wajib divalidasi di FormRequest, jangan disuap mentah ke where()).
+ */
+export function riwayatHariIni(daftar: Pesanan[], sekarang: number = Date.now()): Pesanan[] {
+  const acuan = new Date(sekarang)
+
+  return daftar
+    .filter((pesanan) => {
+      // Belum sempat dikonfirmasi -> bukan riwayat. Ini juga yang menjaga
+      // layar tetap benar seandainya server kelak mengirim status lain.
+      if (!pesanan.waktuBayar) return false
+
+      const waktu = new Date(pesanan.waktuBayar)
+      if (Number.isNaN(waktu.getTime())) return false
+
+      // Dibandingkan per komponen tanggal LOKAL, bukan lewat selisih 24 jam:
+      // "hari ini" bagi kasir berakhir di tengah malam, bukan 24 jam setelah
+      // layar dibuka.
+      return (
+        waktu.getFullYear() === acuan.getFullYear() &&
+        waktu.getMonth() === acuan.getMonth() &&
+        waktu.getDate() === acuan.getDate()
+      )
+    })
+    .sort((a, b) => Date.parse(b.waktuBayar ?? '') - Date.parse(a.waktuBayar ?? ''))
+}
+
 export function totalKembar(daftar: Pesanan[]): Set<number> {
   const jumlahPer = new Map<number, number>()
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { totalKembar } from './antrean'
+import { riwayatHariIni, totalKembar } from './antrean'
 import { type Pesanan } from './api'
 
 /** Pesanan seadanya — yang diuji cuma totalnya. */
@@ -22,6 +22,54 @@ function pesanan(id: string, grandTotal: number): Pesanan {
     items: [],
   }
 }
+
+describe('riwayatHariIni', () => {
+  const sekarang = Date.parse('2026-07-31T20:00:00+07:00')
+
+  /** Pesanan lunas dengan waktu konfirmasi tertentu. */
+  function lunas(id: string, waktuBayar: string | null): Pesanan {
+    return { ...pesanan(id, 20_000), waktuBayar }
+  }
+
+  it('menyimpan pesanan yang dibayar hari ini', () => {
+    const hasil = riwayatHariIni([lunas('a', '2026-07-31T09:15:00+07:00')], sekarang)
+
+    expect(hasil.map((p) => p.id)).toEqual(['a'])
+  })
+
+  it('membuang pesanan kemarin walau baru beberapa jam lalu', () => {
+    // 23:30 kemarin ke 20:00 hari ini cuma terpaut 20 jam. Kalau penyaringnya
+    // memakai selisih 24 jam, pesanan ini ikut — padahal "hari ini" bagi kasir
+    // berakhir di tengah malam, bukan sehari setelah layar dibuka.
+    const hasil = riwayatHariIni([lunas('kemarin', '2026-07-30T23:30:00+07:00')], sekarang)
+
+    expect(hasil).toEqual([])
+  })
+
+  it('menaruh yang paling baru dibayar di pucuk', () => {
+    // Orang yang kembali minta cetak ulang baru saja pergi dari depan kasir.
+    const hasil = riwayatHariIni(
+      [
+        lunas('pagi', '2026-07-31T08:00:00+07:00'),
+        lunas('sore', '2026-07-31T17:00:00+07:00'),
+        lunas('siang', '2026-07-31T12:00:00+07:00'),
+      ],
+      sekarang,
+    )
+
+    expect(hasil.map((p) => p.id)).toEqual(['sore', 'siang', 'pagi'])
+  })
+
+  it('membuang pesanan yang tak punya waktu bayar', () => {
+    expect(riwayatHariIni([lunas('belum', null)], sekarang)).toEqual([])
+  })
+
+  it('membuang waktu bayar yang tak terbaca, bukan menaruhnya di ujung', () => {
+    // Date.parse() menghasilkan NaN, dan NaN di dalam sort() menempatkan baris
+    // itu di posisi acak — nota yang salah dibuka lebih buruk dari nota hilang.
+    expect(riwayatHariIni([lunas('rusak', 'kemarin sore')], sekarang)).toEqual([])
+  })
+})
 
 describe('totalKembar', () => {
   it('menandai total yang dipakai dua pesanan sekaligus', () => {

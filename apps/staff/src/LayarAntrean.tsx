@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { totalKembar } from './antrean'
 import {
   ambilAntrean,
@@ -168,13 +168,21 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
         {/* Bunyinya "perangkat ini", bukan "keluar dari semua": token yang
             sudah terbit di perangkat lain tak bisa dicabut (lihat
             SECURITY_TODO). Tombol harus jujur tentang apa yang dilakukannya. */}
-        <button
-          type="button"
-          onClick={keluar}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-        >
-          Keluar dari perangkat ini
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Jalan menuju nota yang sudah dibayar. Ditaruh di sini, bukan di
+              dalam daftar: pesanan yang lunas SUDAH TIDAK ADA di antrean, jadi
+              tak ada baris mana pun yang bisa menuntun ke sana. */}
+          <Link to="/riwayat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+            Riwayat
+          </Link>
+          <button
+            type="button"
+            onClick={keluar}
+            className="rounded-md border border-slate-300 px-3 py-2 text-left text-sm"
+          >
+            Keluar dari perangkat ini
+          </button>
+        </div>
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-4">
