@@ -234,6 +234,16 @@ export type Pesanan = {
   niatBayar: string | null
   waktuBayar: string | null
   created_at: string | null
+  /**
+   * Batas waktu pesanan ini disapu jadi EXPIRED oleh `orders:expire`.
+   *
+   * Dibaca dari server, TIDAK dihitung ulang dari created_at: batasnya berasal
+   * dari `order_expiry_minutes` milik outlet yang bisa diubah owner kapan saja,
+   * dan nanti tombol "sudah bayar" pelanggan akan memperpanjangnya sekali.
+   * Layar yang menghitung sendiri akan menampilkan tenggat yang berbeda dari
+   * tenggat yang benar-benar dipakai server.
+   */
+  expires_at: string | null
   items: ItemPesanan[]
 }
 
@@ -263,6 +273,7 @@ export function petakanPesanan(m: Record<string, unknown>): Pesanan {
     niatBayar: typeof m.payment_preference === 'string' ? m.payment_preference : null,
     waktuBayar: m.confirmed_at ? String(m.confirmed_at) : null,
     created_at: m.created_at ? String(m.created_at) : null,
+    expires_at: m.expires_at ? String(m.expires_at) : null,
     items: Array.isArray(m.items)
       ? m.items.map((i: Record<string, unknown>) => ({
           nama: String(i.product_name ?? ''),

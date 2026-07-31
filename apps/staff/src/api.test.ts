@@ -93,6 +93,20 @@ describe('petakanPesanan', () => {
     expect(hasil.items[0].hargaSatuan).toBe(22000)
   })
 
+  it('meneruskan tenggat bayar apa adanya dari server', () => {
+    // Layar TIDAK menghitung tenggat sendiri dari created_at: angkanya berasal
+    // dari order_expiry_minutes milik outlet yang boleh diubah owner kapan saja.
+    const hasil = petakanPesanan({ ...mentah, expires_at: '2026-07-29T14:35:00+07:00' })
+
+    expect(hasil.expires_at).toBe('2026-07-29T14:35:00+07:00')
+  })
+
+  it('tenggat yang tak dikirim server jadi null, bukan teks "undefined"', () => {
+    // String(undefined) menghasilkan "undefined" — tenggat palsu yang terlihat
+    // seperti data sungguhan sampai ada yang mencoba membacanya.
+    expect(petakanPesanan(mentah).expires_at).toBeNull()
+  })
+
   it('items yang hilang tidak menumbangkan layar', () => {
     expect(petakanPesanan({ ...mentah, items: undefined }).items).toEqual([])
   })

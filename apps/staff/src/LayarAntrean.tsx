@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { totalKembar } from './antrean'
 import {
   ambilAntrean,
   batalkanPesanan,
@@ -8,14 +9,28 @@ import {
   type CaraBayar,
   type Pesanan,
 } from './api'
-import { jam, rupiah } from './format'
+import { jam, rupiah, sisaMenit } from './format'
 
 /**
  * Jeda polling. 5 detik: kasir baru boleh tahu ada pesanan masuk paling lambat
  * selama itu. Push (`order.created`) belum ada — sengaja, sampai polling
  * benar-benar terasa berat.
+ *
+ * Ia sekaligus yang menggerakkan hitung mundur di kartu: tiap muat ulang
+ * mengganti daftar, komponen dirender ulang, dan sisa waktunya dihitung ulang
+ * dari jam sekarang. Jadi nol timer tambahan — setInterval kedua di sini cuma
+ * akan berdetak di antara dua polling tanpa membawa kabar baru.
  */
 const JEDA_MS = 5000
+
+/**
+ * Di bawah ini sisa waktu berhenti jadi keterangan dan mulai jadi peringatan.
+ *
+ * Lima menit kira-kira sepadan dengan waktu kasir menyelesaikan satu antrean
+ * pendek — cukup untuk sempat menengok HP dan menerima pembayaran sebelum
+ * `orders:expire` menyapu pesanan yang uangnya mungkin sudah masuk.
+ */
+const AMBANG_MENDESAK = 5
 
 const CARA_BAYAR: Array<{ nilai: CaraBayar; label: string }> = [
   { nilai: 'qris_static', label: 'QRIS' },
@@ -136,6 +151,10 @@ export default function LayarAntrean({
     keluarRef.current()
   }
 
+  // Dihitung sekali per render, bukan di dalam map(): memeriksanya per kartu
+  // berarti menyusuri seluruh daftar sekali untuk setiap barisnya.
+  const kembar = totalKembar(daftar ?? [])
+
   return (
     <div className="min-h-svh bg-slate-50 text-slate-900">
       <header className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
@@ -192,6 +211,8 @@ export default function LayarAntrean({
                 )}
               </p>
 
+              <SisaWaktu menit={sisaMenit(pesanan.expires_at)} />
+
               <ul className="mt-3 flex flex-col gap-1">
                 {pesanan.items.map((item, i) => (
                   // Kunci pakai indeks: satu pesanan bisa memuat produk yang
@@ -213,6 +234,16 @@ export default function LayarAntrean({
                 <p className="text-sm text-slate-600">Total</p>
                 <p className="text-lg font-semibold tabular-nums">{rupiah(pesanan.grand_total)}</p>
               </div>
+
+              {/* Ditaruh tepat di bawah nominalnya, bukan di kepala kartu:
+                  inilah angka yang sedang dibandingkan kasir dengan notifikasi
+                  di HP-nya, jadi peringatannya harus ada di titik yang sama
+                  dengan matanya. */}
+              {kembar.has(pesanan.grand_total) && (
+                <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-sm text-amber-900">
+                  Nominal sama dengan pesanan lain — cocokkan nama atau jam sebelum menerima.
+                </p>
+              )}
 
               {/* Tiga keadaan, dan dua di antaranya sengaja butuh dua sentuhan.
                   PAID dan CANCELLED sama-sama terminal — tak ada tombol "urungkan"
@@ -295,5 +326,42 @@ export default function LayarAntrean({
         </ul>
       </main>
     </div>
+  )
+}
+
+/**
+ * Sisa waktu sebelum pesanan disapu jadi EXPIRED.
+ *
+ * Ini menutup risiko uang paling terbuka dari QRIS statis: pelanggan membayar
+ * dari mejanya lalu diam, kasir tak pernah tahu ada yang perlu diperiksa, dan
+ * `orders:expire` menghanguskan pesanan yang uangnya sudah masuk. Kasir tak
+ * bisa mengejar tenggat yang tak terlihat.
+ *
+ * Yang sengaja TIDAK dilakukan: tombolnya tak pernah dinonaktifkan saat waktu
+ * habis. Justru pesanan lewat-batas itulah yang paling mungkin sudah dibayar
+ * diam-diam — melarang kasir menerimanya akan membalik risikonya, bukan
+ * menghapusnya. Kalau `orders:expire` benar-benar sudah menyapunya, server
+ * membalas 409 dan antrean menyegarkan diri sendiri.
+ */
+function SisaWaktu({ menit }: { menit: number | null }) {
+  // Tenggat tak terbaca -> tak menampilkan apa pun. Baris "—" akan dibaca kasir
+  // sebagai "pesanan ini tak punya batas waktu", padahal server tetap menyapunya.
+  if (menit === null) return null
+
+  if (menit > AMBANG_MENDESAK) {
+    return <p className="mt-1 text-sm text-slate-600">Sisa {menit} mnt untuk dibayar</p>
+  }
+
+  const lewat = menit <= 0
+
+  return (
+    <p
+      className={`mt-1 inline-block rounded-md px-2 py-1 text-sm font-semibold ${
+        lewat ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'
+      }`}
+    >
+      {/* Kalimatnya menyuruh MEMERIKSA, bukan menolak — lihat catatan di atas. */}
+      {lewat ? 'Lewat batas bayar · segera cek' : `Sisa ${menit} mnt · segera cek`}
+    </p>
   )
 }
