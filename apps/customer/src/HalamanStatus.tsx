@@ -36,8 +36,8 @@ function jelaskanStatus(status: string, adaQris: boolean): { judul: string; isi:
         // QR-nya terpampang di layar membuat pelanggan bangkit tanpa perlu —
         // persis kebalikan dari alasan fitur ini ada.
         isi: adaQris
-          ? 'Bayar dengan QRIS berikut. Status akan beruba setelah kasir memastikan pembayaranmu masuk.'
-          : 'Bayar dengan QRIS berikut. Status akan beruba setelah kasir memastikan pembayaranmu masuk.',
+          ? 'Bayar dengan QRIS berikut. Status akan berubah setelah kasir memastikan pembayaranmu masuk.'
+          : 'Bayar di meja kasir. Status akan berubah setelah kasir memastikan pembayaranmu masuk.',
       }
     case 'paid':
       return {
