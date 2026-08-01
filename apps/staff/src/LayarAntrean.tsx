@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { totalKembar, urutkanAntrean } from './antrean'
 import {
   ambilAntrean,
+  ambilSetelan,
   batalkanPesanan,
   konfirmasiBayar,
   logout,
@@ -62,6 +63,8 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
   // membacanya ulang berarti mengurai JWT lima puluh kali per menit tanpa satu
   // pun jawaban baru.
   const [owner] = useState(() => peranSaya() === 'owner')
+  /** Outlet ini belum punya QRIS — cuma diperiksa untuk owner. */
+  const [tanpaQris, setTanpaQris] = useState(false)
 
   // Lewat ref supaya identitas fungsi dari App tak pernah memicu effect
   // menyalakan polling kedua yang berjalan berdampingan.
@@ -100,6 +103,39 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
       window.clearTimeout(timer)
     }
   }, [versi])
+
+  /**
+   * Satu pertanyaan sekali buka, khusus owner: sudah ada QRIS atau belum.
+   *
+   * Ini menutup lubang onboarding yang tak kelihatan dari mana pun. Owner baru
+   * membuka antrean yang kosong — memang belum ada pesanan — dan tak ada apa pun
+   * di layar yang memberi tahu bahwa outletnya belum bisa menerima pembayaran
+   * dari meja. Dia baru tahu setelah pelanggan pertamanya mengeluh.
+   *
+   * Kasir tidak ditanya sama sekali: dia tak bisa berbuat apa-apa soal itu, dan
+   * endpoint-nya pun akan membalas 403 untuknya.
+   */
+  useEffect(() => {
+    if (!owner) return
+
+    let batal = false
+
+    ambilSetelan()
+      .then((setelan) => {
+        if (!batal) setTanpaQris(setelan.qrisUrl === null)
+      })
+      .catch(() => {
+        // Sengaja didiamkan, dan ini satu-satunya tempat di layar ini yang
+        // boleh begitu: spanduknya tambahan, bukan pekerjaan utama. Gagal
+        // memuatnya tak boleh menampilkan galat di atas antrean yang justru
+        // sedang bekerja normal — dan sesi yang benar-benar habis sudah
+        // ditangani polling antrean di bawah.
+      })
+
+    return () => {
+      batal = true
+    }
+  }, [owner])
 
   async function terima(pesanan: Pesanan, cara: CaraBayar) {
     if (kirimId !== null) return
@@ -208,6 +244,20 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-4">
+        {/* Ditulis sebagai keterangan keadaan, bukan sebagai kesalahan: kafe
+            yang memang tak menerima QRIS akan melihatnya terus, dan menyebutnya
+            "error" berarti berbohong soal sesuatu yang mungkin disengaja.
+            Sengaja TIDAK bisa ditutup — spanduk yang bisa ditutup akan ditutup
+            di hari pertama lalu tak pernah dibaca lagi. */}
+        {tanpaQris && (
+          <p className="mb-4 rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
+            Outlet ini belum punya QRIS, jadi pelanggan diminta membayar di kasir.{' '}
+            <Link to="/setelan" className="font-semibold underline">
+              Pasang sekarang
+            </Link>
+          </p>
+        )}
+
         {galat && (
           <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             {galat}
