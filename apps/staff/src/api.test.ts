@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ambilAntrean, bacaToken, petakanPesanan, SESI_HABIS } from './api'
+import {
+  ambilAntrean,
+  bacaToken,
+  peranSaya,
+  petakanPesanan,
+  petakanSetelan,
+  SESI_HABIS,
+} from './api'
 
 /** localStorage palsu — vitest berjalan di Node, tak ada penyimpanan browser. */
 function pasangPenyimpanan(awal: Record<string, string> = {}) {
@@ -26,6 +33,106 @@ function tokenDari(init: RequestInit | undefined): string {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('petakanSetelan', () => {
+  const mentah = {
+    tax_percent: '11.00',
+    service_charge_percent: '5.00',
+    order_expiry_minutes: 30,
+    qris_image_url: '/storage/qris/abc.png',
+    limits: {
+      tax_percent_max: 30,
+      service_charge_percent_max: 30,
+      order_expiry_minutes_min: 1,
+      order_expiry_minutes_max: 1440,
+      qris_max_kilobytes: 2048,
+      qris_max_pixels: 2000,
+    },
+  }
+
+  it('persen datang sebagai string decimal, bukan angka', () => {
+    // Kolomnya decimal(5,2): Eloquent mengirim "11.00". Dibiarkan string, ia
+    // akan lolos ke atribut max/min input dan diam-diam gagal dibandingkan.
+    const hasil = petakanSetelan(mentah)
+
+    expect(hasil.pajakPersen).toBe(11)
+    expect(hasil.layananPersen).toBe(5)
+    expect(hasil.kedaluwarsaMenit).toBe(30)
+  })
+
+  it('tarif yang tak terbaca jadi NaN, BUKAN nol', () => {
+    // Nol di layar ini bukan sekadar salah tampilan: owner yang melihat
+    // "Pajak 0%" padahal servernya menagih 11% tak punya alasan untuk curiga,
+    // lalu menekan Simpan dan benar-benar menghapus pajaknya.
+    const hasil = petakanSetelan({ ...mentah, tax_percent: null })
+
+    expect(Number.isNaN(hasil.pajakPersen)).toBe(true)
+  })
+
+  it('outlet tanpa QRIS memberi null, bukan string kosong', () => {
+    expect(petakanSetelan({ ...mentah, qris_image_url: null }).qrisUrl).toBeNull()
+  })
+
+  it('batas dibaca dari server', () => {
+    expect(petakanSetelan(mentah).batas.tax_percent_max).toBe(30)
+    expect(petakanSetelan(mentah).batas.order_expiry_minutes_max).toBe(1440)
+  })
+
+  it('server lama tanpa limits tidak menjatuhkan layar', () => {
+    // Batasnya hilang jadi NaN, dan layar membuang atribut max — form tetap
+    // bisa dipakai, dan yang menolak tetap server. Melempar di sini akan
+    // membuat layar setelan kosong total gara-gara angka pemandu.
+    const { limits, ...tanpaBatas } = mentah
+    void limits
+
+    expect(Number.isNaN(petakanSetelan(tanpaBatas).batas.tax_percent_max)).toBe(true)
+    expect(petakanSetelan(tanpaBatas).pajakPersen).toBe(11)
+  })
+})
+
+describe('peranSaya', () => {
+  /** JWT palsu: header dan tanda tangan tak pernah dibaca fungsi ini. */
+  function token(payload: unknown): string {
+    const b64 = btoa(JSON.stringify(payload))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+
+    return `abc.${b64}.xyz`
+  }
+
+  it('membaca peran dari klaim', () => {
+    pasangPenyimpanan({ 'fnb.staff.token': token({ role: 'owner', sub: '1' }) })
+
+    expect(peranSaya()).toBe('owner')
+  })
+
+  it('kasir bukan owner', () => {
+    pasangPenyimpanan({ 'fnb.staff.token': token({ role: 'cashier' }) })
+
+    expect(peranSaya()).toBe('cashier')
+  })
+
+  it('token cacat menjawab null, tidak melempar', () => {
+    // Kalau ini melempar, seluruh layar antrean gagal dirender — gara-gara
+    // sesuatu yang cuma menentukan tampil atau tidaknya satu tautan.
+    pasangPenyimpanan({ 'fnb.staff.token': 'bukan.jwt' })
+
+    expect(peranSaya()).toBeNull()
+  })
+
+  it('tanpa token menjawab null', () => {
+    pasangPenyimpanan()
+
+    expect(peranSaya()).toBeNull()
+  })
+
+  it('klaim tanpa role menjawab null, bukan undefined yang lolos', () => {
+    pasangPenyimpanan({ 'fnb.staff.token': token({ sub: '1' }) })
+
+    expect(peranSaya()).toBeNull()
+  })
 })
 
 describe('petakanPesanan', () => {

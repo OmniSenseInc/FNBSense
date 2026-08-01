@@ -6,6 +6,7 @@ import {
   batalkanPesanan,
   konfirmasiBayar,
   logout,
+  peranSaya,
   SESI_HABIS,
   type CaraBayar,
   type Pesanan,
@@ -57,6 +58,10 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
   const [kirimId, setKirimId] = useState<string | null>(null)
   /** Dinaikkan untuk memaksa muat ulang segera, tanpa menunggu jeda 5 detik. */
   const [versi, setVersi] = useState(0)
+  // Dibaca sekali, bukan tiap render: peran tak berubah selama satu sesi, dan
+  // membacanya ulang berarti mengurai JWT lima puluh kali per menit tanpa satu
+  // pun jawaban baru.
+  const [owner] = useState(() => peranSaya() === 'owner')
 
   // Lewat ref supaya identitas fungsi dari App tak pernah memicu effect
   // menyalakan polling kedua yang berjalan berdampingan.
@@ -184,6 +189,14 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
           <Link to="/riwayat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
             Riwayat
           </Link>
+          {/* Cuma untuk owner — dan cuma soal tidak menawarkan pintu yang pasti
+              terkunci. Kasir yang mengetik /setelan tetap ditolak server, bukan
+              oleh hilangnya tombol ini. */}
+          {owner && (
+            <Link to="/setelan" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+              Setelan
+            </Link>
+          )}
           <button
             type="button"
             onClick={keluar}

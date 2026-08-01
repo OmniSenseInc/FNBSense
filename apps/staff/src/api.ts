@@ -186,6 +186,17 @@ async function panggil<T>(jalur: string, init?: RequestInit): Promise<T> {
   // jadi jangan diperlakukan sebagai sesi habis (kasir akan login berulang kali
   // tanpa pernah berhasil) — beri kalimat yang benar.
   if (res.status === 403) throw new Error('Akun ini tidak punya akses ke antrean outlet ini.')
+  // 422 = server MENOLAK isinya, bukan gagal dihubungi. Sebelum ini ia jatuh ke
+  // "Gagal menghubungi server. Coba lagi." — kalimat yang menyuruh owner
+  // mengulangi persis hal yang baru saja ditolak, selamanya.
+  if (res.status === 422) {
+    const json = await jsonDari(res)
+    throw new Error(
+      typeof json.message === 'string' && json.message !== ''
+        ? json.message
+        : 'Ada isian yang ditolak server. Periksa lagi angkanya.',
+    )
+  }
   if (res.status === 409) throw new Error('Pesanan sudah tidak bisa diproses. Antrean diperbarui.')
   if (res.status === 404) throw new Error('Pesanan tidak ditemukan di outlet ini.')
   if (!res.ok) throw new Error('Gagal menghubungi server. Coba lagi.')
@@ -410,4 +421,150 @@ export async function batalkanPesanan(id: string): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason: 'Dibatalkan kasir dari layar antrean' }),
   })
+}
+
+/**
+ * Rentang yang boleh diisi owner, DATANG DARI SERVER.
+ *
+ * Sengaja tidak ditulis sebagai konstanta di sini. Angka batas yang disalin ke
+ * layar akan tetap terlihat benar setelah aturannya berubah di server — form
+ * memandu ke maksimum lama, server menolak di maksimum baru, dan tak ada satu
+ * pun test yang merah. Lihat SettingController::limits().
+ */
+export type BatasSetelan = {
+  tax_percent_max: number
+  service_charge_percent_max: number
+  order_expiry_minutes_min: number
+  order_expiry_minutes_max: number
+  qris_max_kilobytes: number
+  qris_max_pixels: number
+}
+
+export type Setelan = {
+  pajakPersen: number
+  layananPersen: number
+  kedaluwarsaMenit: number
+  /** Alamat gambar QRIS, relatif terhadap Ordering. null = belum dipasang. */
+  qrisUrl: string | null
+  batas: BatasSetelan
+}
+
+/**
+ * Bentuk mentah Ordering -> bentuk kita.
+ *
+ * Persen datang sebagai string ("11.00") karena kolomnya decimal — keAngka()
+ * yang menjaga itu, dan nilai tak terbaca jadi NaN alih-alih 0. Nol di layar
+ * ini bukan sekadar salah tampilan: owner yang melihat "Pajak 0%" padahal
+ * servernya menagih 11% tak punya alasan untuk curiga.
+ */
+export function petakanSetelan(m: Record<string, unknown>): Setelan {
+  const batas = (m.limits ?? {}) as Record<string, unknown>
+
+  return {
+    pajakPersen: keAngka(m.tax_percent),
+    layananPersen: keAngka(m.service_charge_percent),
+    kedaluwarsaMenit: keAngka(m.order_expiry_minutes),
+    qrisUrl: typeof m.qris_image_url === 'string' ? m.qris_image_url : null,
+    batas: {
+      tax_percent_max: keAngka(batas.tax_percent_max),
+      service_charge_percent_max: keAngka(batas.service_charge_percent_max),
+      order_expiry_minutes_min: keAngka(batas.order_expiry_minutes_min),
+      order_expiry_minutes_max: keAngka(batas.order_expiry_minutes_max),
+      qris_max_kilobytes: keAngka(batas.qris_max_kilobytes),
+      qris_max_pixels: keAngka(batas.qris_max_pixels),
+    },
+  }
+}
+
+/**
+ * Alamat gambar QRIS yang bisa dipasang di <img>.
+ *
+ * `qris_image_url` relatif terhadap ORDERING, bukan terhadap app ini. Dipasang
+ * apa adanya, browser akan mencarinya di host app staf dan owner melihat kotak
+ * rusak persis di layar yang seharusnya meyakinkannya bahwa QRIS-nya benar
+ * terpasang. URL absolut (kolom yang sama boleh memuatnya) dibiarkan utuh.
+ */
+export function urlQris(jalur: string): string {
+  return /^https?:\/\//.test(jalur) ? jalur : `${ORDERING}${jalur}`
+}
+
+export async function ambilSetelan(): Promise<Setelan> {
+  return petakanSetelan(await panggil<Record<string, unknown>>('/api/settings'))
+}
+
+/**
+ * Simpan tarif outlet.
+ *
+ * Ketiganya dikirim sekaligus walau owner cuma mengubah satu: server memakai
+ * fill(), jadi yang tak dikirim tetap seperti semula — tapi mengirim seluruh
+ * form berarti yang tersimpan persis yang dilihat owner di layar saat menekan
+ * Simpan, bukan gabungan antara ketikannya dan nilai yang mungkin sudah diubah
+ * orang lain di sela-selanya.
+ */
+export async function simpanSetelan(nilai: {
+  pajakPersen: number
+  layananPersen: number
+  kedaluwarsaMenit: number
+}): Promise<Setelan> {
+  const data = await panggil<Record<string, unknown>>('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tax_percent: nilai.pajakPersen,
+      service_charge_percent: nilai.layananPersen,
+      order_expiry_minutes: nilai.kedaluwarsaMenit,
+    }),
+  })
+
+  return petakanSetelan(data)
+}
+
+/**
+ * Unggah gambar QRIS outlet.
+ *
+ * Content-Type SENGAJA tidak diset: batas multipart dibangkitkan browser
+ * berikut nilai acaknya, dan menuliskannya sendiri membuat server tak bisa
+ * memisahkan bagian berkas dari bagian lain.
+ */
+export async function unggahQris(berkas: File): Promise<Setelan> {
+  const form = new FormData()
+  form.append('qris', berkas)
+
+  const data = await panggil<Record<string, unknown>>('/api/settings/qris', {
+    method: 'POST',
+    body: form,
+  })
+
+  return petakanSetelan(data)
+}
+
+/**
+ * Peran pemilik token ini, dibaca dari klaim JWT.
+ *
+ * HANYA untuk memutuskan apa yang perlu ditampilkan. Klaim ini datang dari
+ * localStorage dan bisa dikarang siapa saja yang membuka DevTools — yang
+ * menegakkan izin tetap `role:owner` di server, dan endpoint setelan membalas
+ * 403 untuk kasir berapa kali pun tautannya dipaksa muncul. Menyembunyikan
+ * tautan itu soal tidak menawarkan pintu yang pasti terkunci, bukan soal
+ * mengunci pintunya.
+ */
+export function peranSaya(): string | null {
+  const bagian = bacaToken()?.split('.')[1]
+  if (!bagian) return null
+
+  try {
+    // base64url -> base64, lalu padding dikembalikan: atob() menolak panjang
+    // yang bukan kelipatan empat, dan JWT memang membuang '=' di ujungnya.
+    const b64 = bagian.replace(/-/g, '+').replace(/_/g, '/')
+    const sisa = b64.length % 4
+    const payload: unknown = JSON.parse(atob(sisa === 0 ? b64 : b64 + '='.repeat(4 - sisa)))
+    const peran = (payload as Record<string, unknown>).role
+
+    return typeof peran === 'string' ? peran : null
+  } catch {
+    // Token cacat bukan alasan menjatuhkan layar: pemanggilnya cuma akan
+    // menyembunyikan tautan, dan permintaan pertama ke server yang akan
+    // memulangkan owner ke login kalau tokennya memang tak sah.
+    return null
+  }
 }

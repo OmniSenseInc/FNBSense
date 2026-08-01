@@ -6,6 +6,7 @@ import LayarDibuat from './LayarDibuat'
 import LayarLogin from './LayarLogin'
 import LayarNota from './LayarNota'
 import LayarRiwayat from './LayarRiwayat'
+import LayarSetelan from './LayarSetelan'
 
 /**
  * Kerangka rute app kasir.
@@ -42,6 +43,12 @@ export default function App() {
               dan yang menerima uang sering bukan orang yang sama, dan begitu KDS
               ada, alamat inilah yang dipindahkan ke layar dapur. */}
           <Route path="/dibuat" element={<LayarDibuat onKeluar={keluar} />} />
+          {/* Tak dijaga di sini: penjaganya `role:owner` di Ordering, dan
+              kasir yang memaksa alamat ini melihat form kosong dengan pesan
+              403 — bukan setelan outlet. Menambahkan penjaga kedua di layar
+              berarti dua tempat memutuskan hal yang sama, dan yang di sini
+              justru yang paling mudah dibohongi. */}
+          <Route path="/setelan" element={<LayarSetelan onKeluar={keluar} />} />
           <Route path="/nota/:id" element={<LayarNota onKeluar={keluar} />} />
           {/* Alamat asing dikembalikan ke antrean, bukan dibiarkan jadi layar
               putih — kasir tak punya cara menebak apa yang salah. */}
