@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { petakanMenu, type KategoriMentah } from './api'
+import { bacaWaktuKlaim, petakanMenu, type KategoriMentah } from './api'
+
+/**
+ * Jam klaim datang dari server, jadi diperlakukan sebagai data asing.
+ *
+ * Yang dijaga bukan formatnya melainkan AKIBATNYA di layar: nilai apa pun yang
+ * lolos dari sini menentukan tombol "Saya sudah bayar" ditampilkan atau tidak.
+ * String kosong yang lolos = tombolnya hilang untuk pesanan yang belum pernah
+ * dilaporkan, dan pelanggan kehilangan satu-satunya cara memberi tahu kasir.
+ */
+describe('bacaWaktuKlaim', () => {
+  it('mengembalikan jam klaim apa adanya', () => {
+    expect(bacaWaktuKlaim({ claimed_at: '2026-01-02T14:32:00+07:00' }))
+      .toBe('2026-01-02T14:32:00+07:00')
+  })
+
+  it('belum pernah diklaim -> null', () => {
+    expect(bacaWaktuKlaim({ claimed_at: null })).toBeNull()
+  })
+
+  it('string kosong diperlakukan seperti belum diklaim', () => {
+    expect(bacaWaktuKlaim({ claimed_at: '   ' })).toBeNull()
+  })
+
+  it('respons server lama tanpa blok payment tak menumbangkan layar', () => {
+    expect(bacaWaktuKlaim(undefined)).toBeNull()
+    expect(bacaWaktuKlaim(null)).toBeNull()
+  })
+
+  it('tipe tak terduga ditolak, bukan dipaksa jadi teks', () => {
+    expect(bacaWaktuKlaim({ claimed_at: 1767330720 })).toBeNull()
+  })
+})
 
 /** Pembuat data uji — hanya field yang beda per kasus yang perlu disebut. */
 function kategoriDengan(

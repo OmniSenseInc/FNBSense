@@ -218,6 +218,62 @@ export type Pesanan = {
    * perlu — dan bisa terlewat — ditulis ulang di sini.
    */
   qrisImageUrl: string | null
+  /**
+   * Jam pelanggan melaporkan sudah transfer, atau null kalau belum pernah.
+   *
+   * Dipakai layar untuk mengganti tombol dengan keterangan — bukan untuk
+   * memutuskan boleh-tidaknya melapor. Yang menolak laporan kedua tetap
+   * server; layar cuma berhenti menawarkannya.
+   */
+  claimedAt: string | null
+  /** Isi pesanan. Dipakai popup "Pesanan saya" untuk mengingatkan apa yang dipesan. */
+  items: BarisPesanan[]
+  /**
+   * Tiga titik garis kemajuan. Yang datang JAMnya, bukan "sudah/belum": layar
+   * menuliskannya di bawah tiap titik, dan null sudah cukup berarti "belum
+   * terjadi" tanpa perlu penanda kedua yang bisa berselisih dengannya.
+   */
+  createdAt: string | null
+  paidAt: string | null
+  readyAt: string | null
+}
+
+export type BarisPesanan = {
+  product_id: string
+  product_name: string
+  qty: number
+  line_total: number
+  note: string
+}
+
+/**
+ * Baris pesanan dari server. Data asing, sama seperti harga menu.
+ *
+ * Baris yang tak terbaca DIBUANG satuan, bukan menumbangkan seluruh pesanan:
+ * satu nama produk yang hilang tak boleh membuat pelanggan kehilangan
+ * pandangan atas sembilan item lainnya.
+ */
+export function petakanBarisPesanan(nilai: unknown): BarisPesanan[] {
+  if (!Array.isArray(nilai)) return []
+
+  return nilai.flatMap((baris): BarisPesanan[] => {
+    if (typeof baris !== 'object' || baris === null) return []
+
+    const m = baris as Record<string, unknown>
+    const qty = Number(m.qty)
+    if (!Number.isFinite(qty) || qty <= 0) return []
+
+    return [{
+      product_id: String(m.product_id ?? ''),
+      // Nama kosong lebih baik daripada "undefined" tercetak di layar orang.
+      product_name: typeof m.product_name === 'string' ? m.product_name : '',
+      qty,
+      // NaN dibiarkan lewat: rupiah() sudah menuliskannya "Rp —", dan angka
+      // yang dikarang jauh lebih berbahaya daripada tanda tak-terbaca.
+      line_total: Number(m.line_total),
+      note: typeof m.note === 'string' ? m.note : '',
+    }]
+  })
 }
 
 /**
@@ -249,6 +305,20 @@ export function bacaQris(payment: unknown): string | null {
   return alamat.startsWith('/') ? `${ORDERING}${alamat}` : alamat
 }
 
+/**
+ * Jam klaim dari blok `payment`. Data asing, diperlakukan sama seperti bacaQris:
+ * respons lama belum punya blok itu, dan nilainya berakhir di `new Date()` yang
+ * mengubah sampah jadi "Invalid Date" tanpa bersuara.
+ */
+export function bacaWaktuKlaim(payment: unknown): string | null {
+  if (typeof payment !== 'object' || payment === null) return null
+
+  const nilai = (payment as Record<string, unknown>).claimed_at
+  if (typeof nilai !== 'string' || nilai.trim() === '') return null
+
+  return nilai
+}
+
 /** Sama seperti harga menu: semua nilai uang datang sebagai string decimal. */
 function petakanPesanan(m: Record<string, unknown>): Pesanan {
   return {
@@ -263,6 +333,11 @@ function petakanPesanan(m: Record<string, unknown>): Pesanan {
     grand_total: Number(m.grand_total),
     expires_at: m.expires_at ? String(m.expires_at) : null,
     qrisImageUrl: bacaQris(m.payment),
+    claimedAt: bacaWaktuKlaim(m.payment),
+    items: petakanBarisPesanan(m.items),
+    createdAt: m.created_at ? String(m.created_at) : null,
+    paidAt: m.paid_at ? String(m.paid_at) : null,
+    readyAt: m.ready_at ? String(m.ready_at) : null,
   }
 }
 
@@ -280,6 +355,31 @@ export async function kirimPesanan(payload: PayloadPesanan): Promise<Pesanan> {
     if (res.status === 422) throw new Error('Pesanan ditolak. Coba periksa lagi isinya.')
     if (res.status === 404) throw new Error('QR meja tidak dikenali. Scan ulang QR di meja.')
     throw new Error('Pesanan gagal dikirim. Coba lagi sebentar.')
+  }
+
+  const json = await res.json()
+  return petakanPesanan(json.data)
+}
+
+/**
+ * Laporkan "sudah transfer". Balasannya pesanan yang sudah diperbarui, jadi
+ * layar tak perlu menunggu putaran polling berikutnya untuk berubah.
+ *
+ * 409 bukan kegagalan teknis melainkan kabar: pesanannya sudah dibayar, batal,
+ * atau hangus sementara jari pelanggan menuju tombol. Karena itu pesannya
+ * menyuruh melihat status di atas, bukan menyuruh mencoba lagi.
+ */
+export async function klaimSudahBayar(id: string): Promise<Pesanan> {
+  const res = await fetch(`${ORDERING}/api/orders/${id}/claim-paid`, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+  })
+
+  if (!res.ok) {
+    if (res.status === 409) throw new Error('Pesanan ini sudah tidak menunggu pembayaran. Lihat status di atas.')
+    if (res.status === 429) throw new Error('Terlalu sering menekan. Tunggu sebentar, lalu coba lagi.')
+    if (res.status === 404) throw new Error('Pesanan tidak ditemukan. Tanya kasir ya.')
+    throw new Error('Gagal mengirim laporan. Coba lagi sebentar.')
   }
 
   const json = await res.json()

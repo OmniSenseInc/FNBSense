@@ -23,8 +23,18 @@ export default function App() {
           <Route path="pesan" element={<HalamanRingkasan />} />
         </Route>
         {/* Alamat status bisa di-bookmark & di-refresh: pelanggan menunggu
-            pesanannya, HP-nya bisa mati layar atau tab-nya tertutup. */}
-        <Route path="/order/:id" element={<HalamanStatus />} />
+            pesanannya, HP-nya bisa mati layar atau tab-nya tertutup.
+
+            Mejanya ikut di alamat supaya tombol "kembali ke menu" punya tujuan.
+            Alternatifnya — server mengirim qr_token di respons status — DITOLAK:
+            token itu kredensial cetak yang membuka meja bagi siapa pun yang
+            memegangnya, dan mengirimkannya ke HP pelanggan persis melahirkan
+            masalah "URL meja dipakai orang luar" yang sedang kita hindari.
+
+            Sengaja BUKAN anak LayoutMeja walau alamatnya bersarang: halaman
+            status tak butuh menu, dan menjadikannya anak berarti tiap kali
+            layar ini dibuka seluruh katalog ikut diunduh tanpa dipakai. */}
+        <Route path="/t/:qrToken/order/:id" element={<HalamanStatus />} />
         {/* Buka alamat kosong = belum scan apa pun. Jangan tampilkan layar
             putih; beri tahu apa yang harus dilakukan. */}
         <Route

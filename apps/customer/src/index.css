@@ -1,1 +1,31 @@
 @import "tailwindcss";
+
+/*
+ * Kartu status yang baru berganti rasa. Dipakai bersama key={rasa} di
+ * HalamanStatus: elemennya dipasang ulang saat rasanya berubah, jadi animasi
+ * ini yang menarik mata ke kabar barunya — pelanggan sering baru menoleh ke HP
+ * beberapa detik setelah statusnya berubah.
+ *
+ * Ditulis tangan, bukan lewat paket animasi: satu keyframe tak sepadan dengan
+ * satu dependensi.
+ */
+@keyframes muncul {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.muncul {
+  animation: muncul 0.35s ease-out;
+}
+
+/*
+ * Hormati pengguna yang mematikan animasi di setelan sistemnya. Yang hilang
+ * cuma geraknya — warna dan ikonnya, yang memikul kabarnya, tetap ada.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .muncul {
+    animation: none;
+  }
+}
