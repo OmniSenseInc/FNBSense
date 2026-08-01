@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { totalKembar } from './antrean'
+import { totalKembar, urutkanAntrean } from './antrean'
 import {
   ambilAntrean,
   batalkanPesanan,
@@ -155,6 +155,10 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
   // Dihitung sekali per render, bukan di dalam map(): memeriksanya per kartu
   // berarti menyusuri seluruh daftar sekali untuk setiap barisnya.
   const kembar = totalKembar(daftar ?? [])
+  // Pengurutan di LAYAR, bukan di server: ia sepenuhnya soal ke mana mata kasir
+  // harus jatuh duluan, dan sebagai fungsi murni ia bisa diuji tanpa merender
+  // apa pun (sepola totalKembar/riwayatHariIni).
+  const antrean = daftar === null ? null : urutkanAntrean(daftar)
 
   return (
     <div className="min-h-svh bg-slate-50 text-slate-900">
@@ -172,6 +176,11 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
           {/* Jalan menuju nota yang sudah dibayar. Ditaruh di sini, bukan di
               dalam daftar: pesanan yang lunas SUDAH TIDAK ADA di antrean, jadi
               tak ada baris mana pun yang bisa menuntun ke sana. */}
+          {/* Pesanan yang lunas hilang dari antrean, jadi tanpa dua tautan ini
+              tak ada baris mana pun yang bisa menuntun ke sana. */}
+          <Link to="/dibuat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+            Sedang dibuat
+          </Link>
           <Link to="/riwayat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
             Riwayat
           </Link>
@@ -199,7 +208,7 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
         )}
 
         <ul className="flex flex-col gap-3">
-          {daftar?.map((pesanan) => (
+          {antrean?.map((pesanan) => (
             <li key={pesanan.id} className="rounded-md border border-slate-200 bg-white p-4">
               <div className="flex items-baseline justify-between gap-3">
                 {/* Meja berdiri sejajar nomor pesanan, bukan diselipkan di
@@ -254,6 +263,17 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                 <p className="text-sm text-slate-600">Total</p>
                 <p className="text-lg font-semibold tabular-nums">{rupiah(pesanan.grand_total)}</p>
               </div>
+
+              {/* Klaim pelanggan, ditaruh persis di atas peringatan nominal
+                  kembar: ia yang memberi tahu kasir KENAPA harus melihat HP
+                  sekarang, dan peringatan kembar yang memberi tahu harus
+                  hati-hati apa saat melihatnya. Warnanya biru, bukan kuning —
+                  ini kabar, bukan bahaya. */}
+              {pesanan.klaimBayar && (
+                <p className="mt-2 rounded-md bg-sky-100 px-2 py-1 text-sm text-sky-900">
+                  Pelanggan bilang sudah transfer {jam(pesanan.klaimBayar)} — cek mutasi.
+                </p>
+              )}
 
               {/* Ditaruh tepat di bawah nominalnya, bukan di kepala kartu:
                   inilah angka yang sedang dibandingkan kasir dengan notifikasi

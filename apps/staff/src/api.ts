@@ -241,6 +241,16 @@ export type Pesanan = {
   /** `dine_in` | `takeaway` apa adanya dari server. */
   tipe: string | null
   waktuBayar: string | null
+  /**
+   * Jam pelanggan menekan "Saya sudah bayar" di HP-nya.
+   *
+   * Klaim, BUKAN bukti. Server tak pernah menjadikannya syarat konfirmasi —
+   * pembayar tunai takkan pernah menekannya, dan menjadikannya gerbang berarti
+   * pelanggan yang memutuskan kapan kasir boleh menerima uang.
+   */
+  klaimBayar: string | null
+  /** Jam pesanan dinyatakan selesai dibuat. null = masih di dapur. */
+  siapPada: string | null
   created_at: string | null
   /**
    * Batas waktu pesanan ini disapu jadi EXPIRED oleh `orders:expire`.
@@ -282,6 +292,8 @@ export function petakanPesanan(m: Record<string, unknown>): Pesanan {
     meja: typeof m.table_label === 'string' ? m.table_label : null,
     tipe: typeof m.order_type === 'string' ? m.order_type : null,
     waktuBayar: m.confirmed_at ? String(m.confirmed_at) : null,
+    klaimBayar: m.customer_claimed_paid_at ? String(m.customer_claimed_paid_at) : null,
+    siapPada: m.ready_at ? String(m.ready_at) : null,
     created_at: m.created_at ? String(m.created_at) : null,
     expires_at: m.expires_at ? String(m.expires_at) : null,
     items: Array.isArray(m.items)
@@ -359,6 +371,26 @@ export async function konfirmasiBayar(id: string, cara: CaraBayar): Promise<Pesa
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ payment_method: cara }),
     },
+  )
+
+  return petakanPesanan(data)
+}
+
+/**
+ * Tandai pesanan selesai dibuat.
+ *
+ * Server menolak apa pun yang belum PAID: barang tak boleh dinyatakan keluar
+ * sebelum uangnya diterima. Penandaan kedua dibiarkan lolos TANPA menggeser
+ * jamnya — kasir yang menekan dua kali tak boleh membuat pesanan yang sudah
+ * menunggu sepuluh menit terlihat baru saja selesai.
+ *
+ * Yang menekannya hari ini kasir, besok layar dapur. Endpoint-nya sengaja tak
+ * menyebut siapa.
+ */
+export async function tandaiSiap(id: string): Promise<Pesanan> {
+  const data = await panggil<Record<string, unknown>>(
+    `/api/cashier/orders/${encodeURIComponent(id)}/ready`,
+    { method: 'POST' },
   )
 
   return petakanPesanan(data)

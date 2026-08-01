@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { bacaToken } from './api'
 import LayarAntrean from './LayarAntrean'
+import LayarDibuat from './LayarDibuat'
 import LayarLogin from './LayarLogin'
 import LayarNota from './LayarNota'
 import LayarRiwayat from './LayarRiwayat'
@@ -37,6 +38,10 @@ export default function App() {
               tunggal. Alamat harus menunjuk satu pesanan, bukan sekumpulan
               yang kebetulan bernomor sama. */}
           <Route path="/riwayat" element={<LayarRiwayat onKeluar={keluar} />} />
+          {/* Punya alamat sendiri, bukan menumpang antrean: yang meracik minuman
+              dan yang menerima uang sering bukan orang yang sama, dan begitu KDS
+              ada, alamat inilah yang dipindahkan ke layar dapur. */}
+          <Route path="/dibuat" element={<LayarDibuat onKeluar={keluar} />} />
           <Route path="/nota/:id" element={<LayarNota onKeluar={keluar} />} />
           {/* Alamat asing dikembalikan ke antrean, bukan dibiarkan jadi layar
               putih — kasir tak punya cara menebak apa yang salah. */}

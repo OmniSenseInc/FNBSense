@@ -34,6 +34,7 @@ function pesanan(
     sisaMenit: number | null
     meja: string | null
     tipe: string | null
+    klaimBayar: string | null
   }> = {},
 ) {
   const sisa = ubah.sisaMenit === undefined ? 30 : ubah.sisaMenit
@@ -51,6 +52,8 @@ function pesanan(
     meja: ubah.meja ?? null,
     tipe: ubah.tipe ?? 'dine_in',
     waktuBayar: null,
+    klaimBayar: ubah.klaimBayar ?? null,
+    siapPada: null,
     created_at: new Date().toISOString(),
     expires_at: sisa === null ? null : new Date(Date.now() + sisa * 60_000 - 1_000).toISOString(),
     items: [{ nama: 'Kopi Susu', qty: 1, hargaSatuan: 45_000, total: 45_000, note: '' }],
@@ -77,6 +80,36 @@ beforeEach(() => {
 // dari test sebelumnya tetap menempel di dokumen, dan query berikutnya
 // menemukan dua kartu bernomor sama.
 afterEach(cleanup)
+
+describe('klaim "sudah bayar" dari pelanggan', () => {
+  it('muncul di kartu dengan jamnya', async () => {
+    // Tanpa baris ini seluruh tombol di HP pelanggan tak berdampak apa pun:
+    // kasir tak pernah tahu ada yang mengaku sudah transfer.
+    tampilkan([pesanan({ klaimBayar: '2026-08-01T14:32:00+07:00' })])
+
+    expect(await screen.findByText(/Pelanggan bilang sudah transfer/)).toBeTruthy()
+  })
+
+  it('kartu tanpa klaim tetap bersih', async () => {
+    // Penanda yang muncul di semua kartu tak menunjuk apa pun.
+    tampilkan([pesanan({})])
+
+    await screen.findByText('A-001')
+    expect(screen.queryByText(/Pelanggan bilang sudah transfer/)).toBeNull()
+  })
+
+  it('pengklaim naik ke pucuk antrean', async () => {
+    tampilkan([
+      pesanan({ id: 'a', order_number: 'A-001' }),
+      pesanan({ id: 'b', order_number: 'B-002', klaimBayar: '2026-08-01T14:32:00+07:00' }),
+    ])
+
+    await screen.findByText('B-002')
+    // Urutan DOM, bukan sekadar keberadaan: yang diuji justru posisinya.
+    const nomor = screen.getAllByText(/^[AB]-00\d$/).map((el) => el.textContent)
+    expect(nomor).toEqual(['B-002', 'A-001'])
+  })
+})
 
 describe('sisa waktu bayar di kartu', () => {
   it('masih lama: ditulis biasa, tanpa desakan', async () => {

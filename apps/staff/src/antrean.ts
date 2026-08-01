@@ -9,18 +9,6 @@
 import { type Pesanan } from './api'
 
 /**
- * Total yang muncul lebih dari sekali di antrean yang sedang ditampilkan.
- *
- * Ini pagar khas QRIS statis. Nominal tidak terkunci di dalam QR, jadi satu-
- * satunya petunjuk kasir untuk mencocokkan notifikasi mutasi ke pesanan adalah
- * angkanya. Begitu dua meja punya total identik — dua-duanya kopi + roti —
- * notifikasi "Rp 45.000" tak lagi menunjuk siapa pun, dan bisa saja hanya SATU
- * yang benar-benar terkirim. Bahayanya bukan karena sering terjadi, tapi karena
- * kasir tak punya cara menyadari dia salah orang.
- *
- * Dihitung dari daftar yang sudah dimuat — nol permintaan tambahan ke server.
- */
-/**
  * Pesanan yang dibayar pada hari yang sama dengan `sekarang`, terbaru dulu.
  *
  * Kasir membuka riwayat untuk satu alasan: seseorang kembali dan minta notanya
@@ -59,6 +47,18 @@ export function riwayatHariIni(daftar: Pesanan[], sekarang: number = Date.now())
     .sort((a, b) => Date.parse(b.waktuBayar ?? '') - Date.parse(a.waktuBayar ?? ''))
 }
 
+/**
+ * Total yang muncul lebih dari sekali di antrean yang sedang ditampilkan.
+ *
+ * Ini pagar khas QRIS statis. Nominal tidak terkunci di dalam QR, jadi satu-
+ * satunya petunjuk kasir untuk mencocokkan notifikasi mutasi ke pesanan adalah
+ * angkanya. Begitu dua meja punya total identik — dua-duanya kopi + roti —
+ * notifikasi "Rp 45.000" tak lagi menunjuk siapa pun, dan bisa saja hanya SATU
+ * yang benar-benar terkirim. Bahayanya bukan karena sering terjadi, tapi karena
+ * kasir tak punya cara menyadari dia salah orang.
+ *
+ * Dihitung dari daftar yang sudah dimuat — nol permintaan tambahan ke server.
+ */
 export function totalKembar(daftar: Pesanan[]): Set<number> {
   const jumlahPer = new Map<number, number>()
 
@@ -78,4 +78,45 @@ export function totalKembar(daftar: Pesanan[]): Set<number> {
   }
 
   return kembar
+}
+
+/**
+ * Antrean dengan pengklaim di pucuk.
+ *
+ * Pelanggan yang menekan "Saya sudah bayar" sudah mentransfer dan sekarang
+ * duduk menunggu. Dari sisi kasir inilah baris yang paling mungkin uangnya
+ * sudah masuk tapi belum tercatat — dan tenggatnya sudah diperpanjang sekali,
+ * takkan diperpanjang lagi.
+ *
+ * Urutan di dalam masing-masing kelompok dibiarkan seperti kiriman server (yang
+ * paling lama menunggu tetap di atas): sort() JavaScript stabil, jadi baris yang
+ * tak dibandingkan tak bertukar tempat sendiri.
+ */
+export function urutkanAntrean(daftar: Pesanan[]): Pesanan[] {
+  // Menyalin dulu, bukan mengurutkan di tempat: `daftar` adalah state React,
+  // dan mengaduk array yang sama tak mengubah identitasnya — render berikutnya
+  // bisa saja melewatkannya.
+  return [...daftar].sort(
+    (a, b) => Number(b.klaimBayar !== null) - Number(a.klaimBayar !== null),
+  )
+}
+
+/**
+ * Pesanan yang sudah dibayar tapi belum dinyatakan siap — antrean dapur.
+ *
+ * Lunas dulu, siap belakangan: pesanan hanya bisa muncul di sini setelah uangnya
+ * tercatat, jadi tak ada jalan menyerahkan barang lebih dulu lalu menagih.
+ *
+ * Terlama dulu, kebalikan dari riwayat. Yang dicari di sini bukan orang yang
+ * baru saja pergi dari meja kasir, melainkan orang yang paling lama menunggu
+ * minumannya.
+ */
+export function sedangDibuat(daftar: Pesanan[], sekarang: number = Date.now()): Pesanan[] {
+  // riwayatHariIni() sudah membuang yang bukan hari ini dan yang jam bayarnya
+  // tak terbaca — himpunannya sama persis, cuma arah urutannya yang berbeda.
+  // filter() mengembalikan array baru milik kita, jadi reverse() di sini tak
+  // menyentuh apa pun milik pemanggil.
+  return riwayatHariIni(daftar, sekarang)
+    .filter((pesanan) => pesanan.siapPada === null)
+    .reverse()
 }
