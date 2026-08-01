@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router'
 import { MAKS_ITEM, kirimPesanan, susunPesanan, type CaraBayar } from './api'
 import { rupiah } from './format'
 import { useMeja } from './konteksMeja'
+import { catatPesanan, kunciPesanan } from './pesananSaya'
 
 /**
  * Layar periksa-sebelum-kirim: /t/:qrToken/pesan.
@@ -68,9 +69,14 @@ export default function HalamanRingkasan() {
       // justru wajib bertahan — itu seluruh alasan ia disimpan.
       setTerkirim(true)
       hapusKeranjang()
+      // Dicatat SEBELUM pindah layar, sejajar dengan pembersihan keranjang:
+      // keduanya harus terjadi pada commit yang sama dengan pengiriman yang
+      // sukses. Ditaruh di effect, ia takkan pernah jalan — komponen ini
+      // di-unmount pada commit itu juga.
+      catatPesanan(kunciPesanan(qrToken), pesanan.id)
       // replace: pelanggan yang menekan back dari halaman status tak perlu
       // mendarat di ringkasan pesanan yang sudah terkirim.
-      navigate(`/order/${pesanan.id}`, { replace: true })
+      navigate(`/t/${qrToken}/order/${pesanan.id}`, { replace: true })
     } catch (e) {
       setGalatKirim(e instanceof Error ? e.message : 'Pesanan gagal dikirim.')
       setMengirim(false)

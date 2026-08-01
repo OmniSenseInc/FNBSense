@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { NAMA_KAFE, type Produk } from './api'
+import DialogPesananSaya from './DialogPesananSaya'
 import DialogProduk from './DialogProduk'
 import { rupiah } from './format'
 import KontrolQty from './KontrolQty'
 import { ubahBaris } from './keranjang'
 import { useMeja } from './konteksMeja'
+import { bacaPesananSaya, kunciPesanan } from './pesananSaya'
 
 /**
  * Wadah gambar menu, 64x64.
@@ -54,9 +56,21 @@ function GambarMenu({ src }: { src: string | null }) {
  * memilih dan menghitung, tak mengambil apa pun sendiri.
  */
 export default function HalamanMenu() {
-  const { meja, kategori, isi, setIsi } = useMeja()
+  const { qrToken, meja, kategori, isi, setIsi } = useMeja()
 
   const [cari, setCari] = useState('')
+
+  /**
+   * Dibaca SEKALI saat halaman dipasang, bukan tiap render.
+   *
+   * Halaman ini di-render ulang tiap ketukan +/− dan tiap huruf yang diketik di
+   * kotak cari; membaca localStorage di jalur itu berarti mem-parse JSON puluhan
+   * kali per menit untuk data yang cuma berubah saat pesanan baru dikirim — dan
+   * pesanan baru selalu datang lewat layar LAIN, yang memasang ulang halaman ini
+   * saat pelanggan kembali.
+   */
+  const [pesananSaya] = useState(() => bacaPesananSaya(kunciPesanan(qrToken)))
+  const [pesananDibuka, setPesananDibuka] = useState(false)
 
   // Menu yang sedang dibuka detailnya. null = tak ada lembar terbuka.
   const [produkDibuka, setProdukDibuka] = useState<Produk | null>(null)
@@ -95,9 +109,25 @@ export default function HalamanMenu() {
 
   return (
     <div className="min-h-svh bg-white text-slate-900">
-      <header className="border-b border-slate-200 px-4 py-3">
-        <h1 className="text-[17px] font-semibold">{NAMA_KAFE}</h1>
-        <p className="text-sm text-slate-600">{meja.label}</p>
+      <header className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[17px] font-semibold">{NAMA_KAFE}</h1>
+          <p className="text-sm text-slate-600">{meja.label}</p>
+        </div>
+
+        {/* Muncul HANYA kalau HP ini memang pernah memesan di meja ini hari
+            ini. Tombol yang selalu ada lalu membuka popup kosong mengajari
+            pelanggan bahwa tombol itu tak berguna, dan dia berhenti melihatnya
+            justru ketika akhirnya ada isinya. */}
+        {pesananSaya.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setPesananDibuka(true)}
+            className="h-11 shrink-0 rounded-md border border-slate-300 px-3 text-sm font-semibold"
+          >
+            Pesanan saya ({pesananSaya.length})
+          </button>
+        )}
       </header>
 
       {/* pb-28: ruang supaya item terakhir tak tertutup bar cart yang melayang. */}
@@ -199,6 +229,13 @@ export default function HalamanMenu() {
           </section>
         ))}
       </main>
+
+      <DialogPesananSaya
+        entri={pesananSaya}
+        qrToken={qrToken}
+        terbuka={pesananDibuka}
+        onTutup={() => setPesananDibuka(false)}
+      />
 
       {/* Selalu ter-render, isinya kosong saat tertutup: <dialog> butuh ref
           yang stabil supaya showModal() punya sasaran saat menu dipilih. */}
