@@ -133,6 +133,53 @@ class CashierOrderController extends Controller
     }
 
     /**
+     * Tandai pesanan siap diantar.
+     *
+     * Hanya pesanan yang SUDAH dibayar: menandai siap pesanan yang belum lunas
+     * berarti barangnya keluar tanpa uang, dan urutan itu tak bisa diperbaiki
+     * belakangan.
+     *
+     * Idempoten — sudah ditandai membalas apa adanya tanpa menggeser jamnya.
+     * Jam siap yang bergeser tiap ketukan membuat "siap sejak 14:41" berbohong,
+     * dan pelanggan yang menunggu 10 menit melihat pesanannya seolah baru saja
+     * selesai.
+     *
+     * Diisi kasir hari ini. Saat layar dapur (KDS) jadi, ia memakai endpoint
+     * INI juga — bukan jalur kedua yang harus sama-sama benar.
+     */
+    public function markReady(Request $request, string $id): JsonResponse
+    {
+        $tenantId = $this->tenantId($request);
+        $outletId = $this->outletId($request);
+
+        $order = DB::transaction(function () use ($id, $tenantId, $outletId) {
+            $order = Order::query()
+                ->where('tenant_id', $tenantId)
+                ->where('outlet_id', $outletId)
+                ->where('id', $id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($order === null) {
+                throw new ModelNotFoundException;
+            }
+
+            if ($order->status !== OrderStatus::Paid) {
+                throw new HttpException(409, 'Hanya pesanan yang sudah dibayar bisa ditandai siap.');
+            }
+
+            if ($order->ready_at === null) {
+                $order->ready_at = now();
+                $order->save();
+            }
+
+            return $order;
+        });
+
+        return response()->json(['data' => $this->present($order->load(['items', 'table']))]);
+    }
+
+    /**
      * Batalkan order PENDING. PAID terminal -> 409 (uang sudah masuk, tak bisa
      * dibatalkan). Sudah CANCELLED/EXPIRED -> 409 (tak ada yang perlu diubah).
      */
@@ -284,8 +331,16 @@ class CashierOrderController extends Controller
             // boleh berubah pikiran di depan meja kasir, dan yang masuk laporan
             // harus yang benar-benar diterima.
             'payment_preference' => $order->payment_preference,
+            // Jam pelanggan mengaku sudah mentransfer. Bukan bukti — kasir tetap
+            // memeriksa notifikasi mutasinya sendiri; ini yang memberi tahu dia
+            // pesanan MANA yang paling mungkin uangnya sudah masuk, dan sejak
+            // pukul berapa harus mencarinya di daftar mutasi.
+            'customer_claimed_paid_at' => $order->customer_claimed_paid_at,
             'confirmed_by' => $order->confirmed_by,
             'confirmed_at' => $order->confirmed_at,
+            // null = masih dibuat. Layar kasir memakainya untuk memisahkan
+            // "sedang dibuat" dari "sudah keluar", tanpa status tambahan.
+            'ready_at' => $order->ready_at,
             'expires_at' => $order->expires_at,
             'note' => $order->note,
             'created_at' => $order->created_at,

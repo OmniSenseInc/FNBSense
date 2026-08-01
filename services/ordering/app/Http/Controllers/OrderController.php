@@ -13,9 +13,11 @@ use App\Services\CatalogClient;
 use App\Services\OrderCalculator;
 use App\Services\OrderNumberGenerator;
 use App\Services\PromotionClient;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Endpoint customer — PUBLIK, tanpa login, rate-limited.
@@ -105,6 +107,69 @@ class OrderController extends Controller
         $order = Order::with('items')->findOrFail($id);
 
         return response()->json(['data' => $this->present($order)]);
+    }
+
+    /**
+     * Pelanggan menyatakan sudah mentransfer lewat QRIS.
+     *
+     * Ini SINYAL, bukan gerbang. Kasir tetap bisa mengonfirmasi pesanan yang
+     * tak pernah diklaim — pelanggan tunai tak akan pernah menekan tombolnya,
+     * dan yang bayar QRIS pun sering langsung berdiri ke kasir sambil
+     * menyodorkan bukti transfer. Menjadikan klaim sebagai syarat akan
+     * membalik invarian inti: pelanggan yang menentukan kapan kasir boleh
+     * menerima uang.
+     *
+     * Tanpa auth — pelanggan tak punya token. Yang bisa disalahgunakan orang
+     * yang menebak `order_id` cuma menaikkan satu pesanan di antrean dan
+     * memperpanjang tenggatnya sekali; bukan jalur uang, dan `show()` di atas
+     * sudah publik dengan pemaparan setara.
+     *
+     * Sengaja TIDAK menolak pesanan yang niatnya tunai. Layar yang
+     * menyembunyikan tombolnya (ia menumpang keputusan `qrisUntuk()`);
+     * menambah cabang kedua di sini berarti dua tempat memutuskan hal yang
+     * sama, dan keduanya bisa berselisih setelah salah satu diubah.
+     */
+    public function claimPaid(string $id): JsonResponse
+    {
+        $order = DB::transaction(function () use ($id) {
+            // lockForUpdate: dua ketukan beruntun dari jari yang sama (atau tab
+            // ganda) menunggu di sini, lalu yang kedua membaca kolom penanda
+            // yang SUDAH terisi -> tak memperpanjang untuk kedua kalinya.
+            $order = Order::query()->where('id', $id)->lockForUpdate()->first();
+
+            if ($order === null) {
+                throw new ModelNotFoundException;
+            }
+
+            // Sudah dibayar/batal/hangus -> tak ada yang perlu dilaporkan lagi.
+            if ($order->status !== OrderStatus::Pending) {
+                throw new HttpException(409, 'Pesanan ini tidak lagi menunggu pembayaran.');
+            }
+
+            // Klaim kedua dan seterusnya: balas keadaan sekarang, jangan tulis
+            // apa pun. Kalau tenggat ikut diperpanjang tiap ketukan, satu orang
+            // bisa menahan pesanannya di antrean kasir selamanya — pola yang
+            // sama seperti "1 PENDING per meja" yang sudah ditolak.
+            if ($order->customer_claimed_paid_at === null) {
+                $setting = OrderSetting::query()
+                    ->where('tenant_id', $order->tenant_id)
+                    ->where('outlet_id', $order->outlet_id)
+                    ->first()
+                    ?? OrderSetting::defaultsFor($order->tenant_id, $order->outlet_id);
+
+                $order->customer_claimed_paid_at = now();
+                // Jam pasir diputar sekali lagi dengan aturan yang sudah dipilih
+                // owner, bukan konstanta baru. Gunanya menahan `orders:expire`
+                // supaya tak menghanguskan pesanan yang uangnya sudah masuk
+                // sementara kasir belum sempat memeriksa notifikasi mutasinya.
+                $order->expires_at = now()->addMinutes((int) $setting->order_expiry_minutes);
+                $order->save();
+            }
+
+            return $order;
+        });
+
+        return response()->json(['data' => $this->present($order->load('items'))]);
     }
 
     /**
@@ -228,6 +293,16 @@ class OrderController extends Controller
             'grand_total' => $order->grand_total,
             'promotion' => $order->promotion_snapshot,
             'expires_at' => $order->expires_at,
+            // Tiga titik garis kemajuan di layar pelanggan. Yang dikirim JAMnya,
+            // bukan "sudah/belum": layar menuliskannya di bawah tiap titik, dan
+            // null sudah cukup berarti "belum terjadi".
+            //
+            // `confirmed_at` dikirim sebagai `paid_at` — kosakata internal
+            // ("dikonfirmasi kasir") tak perlu bocor ke pelanggan, yang
+            // dipedulikannya cuma uangnya sudah diterima.
+            'created_at' => $order->created_at,
+            'paid_at' => $order->confirmed_at,
+            'ready_at' => $order->ready_at,
             // Dibungkus objek, bukan field lepas di akar: instruksi pembayaran
             // masih akan tumbuh (penanda "pelanggan mengaku sudah bayar", cara
             // bayar selain QRIS), dan menambah kunci ke dalam objek yang sudah
@@ -239,6 +314,11 @@ class OrderController extends Controller
                 // ditunggu ("bayar di kasir" vs "pindai QR"), bukan cuma diam
                 // saat QR-nya sengaja tak ada.
                 'preference' => $order->payment_preference,
+                // Jam klaim, bukan sekadar sudah/belum: layar menuliskannya
+                // kembali ("dilaporkan 14:32") supaya pelanggan yang membuka
+                // ulang halamannya tahu laporannya memang tercatat — tanpa itu
+                // dia menekan tombol yang sama untuk kedua kalinya.
+                'claimed_at' => $order->customer_claimed_paid_at,
             ],
             'items' => $order->items->map(fn (OrderItem $item) => [
                 'product_id' => $item->product_id,

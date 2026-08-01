@@ -62,6 +62,10 @@ class Order extends Model
             'promotion_snapshot' => 'array',
             'confirmed_at' => 'datetime',
             'expires_at' => 'datetime',
+            // Tak fillable, sama seperti confirmed_at: ini catatan kejadian yang
+            // ditulis server, bukan isian yang boleh datang dari body request.
+            'customer_claimed_paid_at' => 'datetime',
+            'ready_at' => 'datetime',
         ];
     }
 

@@ -17,6 +17,13 @@ Route::middleware('throttle:60,1')->group(function () {
     Route::get('orders/{id}', [OrderController::class, 'show']);
 });
 Route::post('orders', [OrderController::class, 'store'])->middleware('throttle:orders');
+// Limiter sendiri, tidak menumpang 'orders': limiter itu membatasi per qr_token,
+// yang tak ada di sini — semua klaim akan tertumpuk di satu ember dan pelanggan
+// ke-11 di seluruh kafe ikut ditolak. Juga tidak menumpang grup GET 60/mnt di
+// atas: ketukan pertama MENULIS (menggeser tenggat), jadi ambangnya layak lebih
+// ketat daripada polling status yang cuma membaca.
+Route::post('orders/{id}/claim-paid', [OrderController::class, 'claimPaid'])
+    ->middleware('throttle:claim');
 
 // Endpoint kasir — antrean & keputusan uang. role cashier ATAU owner (owner
 // boleh melakukan semua yang kasir bisa). Outlet diambil dari klaim token.
@@ -25,6 +32,9 @@ Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
     Route::get('cashier/orders/{id}', [CashierOrderController::class, 'show']);
     Route::post('cashier/orders/{id}/confirm-payment', [CashierOrderController::class, 'confirmPayment']);
     Route::post('cashier/orders/{id}/cancel', [CashierOrderController::class, 'cancel']);
+    // Dipakai kasir sekarang, layar dapur (KDS) nanti — satu pintu, bukan dua
+    // jalur yang harus sama-sama benar.
+    Route::post('cashier/orders/{id}/ready', [CashierOrderController::class, 'markReady']);
 });
 
 // Manajemen meja & tarif — owner saja (JWT terverifikasi + role:owner).
