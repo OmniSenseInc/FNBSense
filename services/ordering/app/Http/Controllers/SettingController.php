@@ -33,7 +33,50 @@ class SettingController extends Controller
         $setting = $this->find($request)
             ?? OrderSetting::defaultsFor($this->tenantId($request), $this->outletId($request));
 
-        return response()->json(['data' => $setting]);
+        // Batas ikut dikirim, tidak dibiarkan disalin klien.
+        //
+        // Layar setelan owner butuh angka-angka ini untuk memandu sebelum
+        // menekan Simpan. Kalau ia menyalinnya sendiri, ada dua sumber
+        // kebenaran yang bisa berselisih diam-diam: konstanta di sini berubah,
+        // layar tetap memandu ke angka lama, dan tak ada satu pun test yang
+        // merah. Dikirim dari sini, otoritasnya tetap tunggal — dan yang
+        // menolak tetap validasi server, bukan formnya.
+        return $this->respond($setting);
+    }
+
+    /**
+     * Satu bentuk jawaban untuk ketiga endpoint setelan.
+     *
+     * Kalau hanya show() yang membawa `limits`, layar owner kehilangan batasnya
+     * tepat setelah menyimpan — dan sisa sesi itu ia memandu dengan angka yang
+     * sudah tak ada.
+     */
+    private function respond(OrderSetting $setting): JsonResponse
+    {
+        return response()->json(['data' => $setting->toArray() + ['limits' => self::limits()]]);
+    }
+
+    /**
+     * Rentang yang boleh diisi owner, apa adanya dari sumbernya masing-masing.
+     *
+     * Sengaja menunjuk konstanta, bukan menuliskan ulang angkanya: mengubah
+     * batas di satu tempat harus langsung terlihat di layar owner.
+     *
+     * @return array<string, int>
+     */
+    private static function limits(): array
+    {
+        return [
+            'tax_percent_max' => OrderSetting::MAX_TAX_PERCENT,
+            'service_charge_percent_max' => OrderSetting::MAX_SERVICE_CHARGE_PERCENT,
+            // Satu-satunya angka yang ditulis di sini, bukan diambil dari
+            // konstanta: 'min:1' di UpdateSettingRequest memang literal, dan
+            // membuat konstanta untuk angka satu cuma menambah tempat melihat.
+            'order_expiry_minutes_min' => 1,
+            'order_expiry_minutes_max' => OrderSetting::MAX_EXPIRY_MINUTES,
+            'qris_max_kilobytes' => UploadQrisRequest::MAX_KILOBYTES,
+            'qris_max_pixels' => UploadQrisRequest::MAX_PIXELS,
+        ];
     }
 
     public function update(UpdateSettingRequest $request): JsonResponse
@@ -41,7 +84,7 @@ class SettingController extends Controller
         $setting = $this->find($request);
 
         if ($setting !== null) {
-            return response()->json(['data' => $this->applyTo($setting, $request)]);
+            return $this->respond($this->applyTo($setting, $request));
         }
 
         // Baris lahir saat owner pertama kali menyimpan tarif. Ini titik balapan:
@@ -53,11 +96,11 @@ class SettingController extends Controller
         $baru = OrderSetting::defaultsFor($this->tenantId($request), $this->outletId($request));
 
         try {
-            return response()->json(['data' => $this->applyTo($baru, $request)]);
+            return $this->respond($this->applyTo($baru, $request));
         } catch (UniqueConstraintViolationException) {
             $pemenang = $this->find($request);
 
-            return response()->json(['data' => $this->applyTo($pemenang, $request)]);
+            return $this->respond($this->applyTo($pemenang, $request));
         }
     }
 
@@ -97,7 +140,7 @@ class SettingController extends Controller
         // penyimpanan gagal, outlet kehilangan QRIS-nya tanpa punya gantinya.
         $this->hapusBerkasLama($lama);
 
-        return response()->json(['data' => $setting]);
+        return $this->respond($setting);
     }
 
     /**

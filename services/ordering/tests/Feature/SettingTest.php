@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Requests\UploadQrisRequest;
 use App\Models\OrderSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -38,6 +39,53 @@ class SettingTest extends TestCase
             ->assertJsonPath('data.order_expiry_minutes', OrderSetting::DEFAULT_EXPIRY_MINUTES);
 
         $this->assertDatabaseCount('order_settings', 0);
+    }
+
+    /**
+     * Batas ikut dikirim ke layar owner.
+     *
+     * Menunjuk konstantanya, bukan menulis ulang angkanya: kalau test ini
+     * memuat literal 30, ia akan tetap hijau saat batas aslinya diubah — dan
+     * layar owner memandu ke angka yang sudah tak berlaku tanpa satu pun
+     * peringatan. Yang dijaga di sini justru KESAMBUNGANNYA, bukan angkanya.
+     */
+    public function test_batas_ikut_dikirim_supaya_layar_tak_menyalinnya(): void
+    {
+        $this->withHeaders($this->authHeaders($this->tenantId, $this->outletId))
+            ->getJson('/api/settings')
+            ->assertOk()
+            ->assertJsonPath('data.limits.tax_percent_max', OrderSetting::MAX_TAX_PERCENT)
+            ->assertJsonPath(
+                'data.limits.service_charge_percent_max',
+                OrderSetting::MAX_SERVICE_CHARGE_PERCENT,
+            )
+            ->assertJsonPath('data.limits.order_expiry_minutes_min', 1)
+            ->assertJsonPath('data.limits.order_expiry_minutes_max', OrderSetting::MAX_EXPIRY_MINUTES)
+            ->assertJsonPath('data.limits.qris_max_kilobytes', UploadQrisRequest::MAX_KILOBYTES)
+            ->assertJsonPath('data.limits.qris_max_pixels', UploadQrisRequest::MAX_PIXELS);
+    }
+
+    /**
+     * Batas yang dikirim harus benar-benar yang ditegakkan.
+     *
+     * Tanpa ini, `limits` cuma angka yang kebetulan cocok: layar memandu ke
+     * maksimum 30, server menolak di 30, dan tak ada yang membuktikan keduanya
+     * bicara soal aturan yang sama.
+     */
+    public function test_batas_yang_dikirim_persis_yang_ditolak_server(): void
+    {
+        $headers = $this->authHeaders($this->tenantId, $this->outletId);
+
+        $batas = $this->withHeaders($headers)->getJson('/api/settings')
+            ->json('data.limits.tax_percent_max');
+
+        $this->withHeaders($headers)
+            ->putJson('/api/settings', ['tax_percent' => $batas])
+            ->assertOk();
+
+        $this->withHeaders($headers)
+            ->putJson('/api/settings', ['tax_percent' => $batas + 1])
+            ->assertStatus(422);
     }
 
     /** Simpan pertama kali: baris lahir di sini. */
