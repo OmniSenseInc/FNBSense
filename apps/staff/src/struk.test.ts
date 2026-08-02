@@ -135,16 +135,19 @@ describe('barisStruk', () => {
     // sampai ke tangan yang meracik.
     const baris = barisStruk(pesanan(), OUTLET, 32)
 
-    expect(baris.some((b) => b.teks === '  tanpa gula')).toBe(true)
+    expect(baris.some((b) => b.teks === '- tanpa gula')).toBe(true)
   })
 
-  it('baris nol tidak dicetak', () => {
-    // Kafe tanpa pajak dan service charge tak perlu dua baris "Rp 0" di
-    // struknya setiap hari.
+  it('pungutan wajib tetap dicetak walau nol', () => {
+    // Sengaja DIBALIK dari versi pertama berkas ini. Menghemat dua baris
+    // kertas terdengar masuk akal sampai kamu sadar layarnya tetap menampilkan
+    // "Pajak Rp 0": pelanggan yang membandingkan struk dengan layar kasir
+    // melihat dua dokumen berbeda untuk satu transaksi. Yang boleh hilang saat
+    // nol cuma yang opsional (promo), bukan pungutan wajib.
     const isi = teksPenuh(barisStruk(pesanan({ layanan: 0, pajak: 0 }), OUTLET, 32))
 
-    expect(isi).not.toContain('Layanan')
-    expect(isi).not.toContain('Pajak')
+    expect(isi).toContain('Layanan')
+    expect(isi).toContain('Pajak')
   })
 
   it('total memakai gaya tebal, dan hanya total', () => {

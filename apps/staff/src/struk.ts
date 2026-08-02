@@ -180,11 +180,6 @@ export function barisStruk(pesanan: Pesanan, outlet: IdentitasOutlet, lebar: num
   // dulu di titik panggilnya — itu bukan pengulangan sia-sia: `…` menjadi
   // `...` mengubah panjang teks, jadi pembersihan harus terjadi sebelum
   // pembungkusan kalau lebarnya mau dihitung benar.
-  // keAscii DI SINI adalah jaring terakhirnya, dan sengaja diletakkan di satu
-  // titik yang dilewati SEMUA baris. Beberapa medan sudah dibersihkan lebih
-  // dulu di titik panggilnya — itu bukan pengulangan sia-sia: `…` menjadi
-  // `...` mengubah panjang teks, jadi pembersihan harus terjadi sebelum
-  // pembungkusan kalau lebarnya mau dihitung benar.
   const tulis = (teks: string, gaya: Gaya = 'normal') => baris.push({ teks: keAscii(teks), gaya })
 
   // ── Kepala ────────────────────────────────────────────────────────────
@@ -224,11 +219,11 @@ export function barisStruk(pesanan: Pesanan, outlet: IdentitasOutlet, lebar: num
     for (const potong of bungkus(keAscii(item.nama), lebar)) tulis(potong)
     tulis(kolom(`${item.qty} x ${uang(item.hargaSatuan)}`, uang(item.total), lebar))
 
-    // Catatan menjorok dua spasi supaya jelas ia milik item di atasnya, bukan
-    // item berikutnya. Selama layar dapur belum ada, di sinilah "tanpa gula"
-    // sampai ke tangan yang meracik.
+    // Diawali "- " sepola layar nota, supaya jelas ia milik item di atasnya.
+    // Selama layar dapur belum ada, di sinilah "tanpa gula" sampai ke tangan
+    // yang meracik.
     if (item.note !== '') {
-      for (const potong of bungkus(keAscii(item.note), lebar - 2)) tulis('  ' + potong)
+      for (const potong of bungkus(keAscii(item.note), lebar - 2)) tulis('- ' + potong)
     }
   }
 
@@ -236,15 +231,20 @@ export function barisStruk(pesanan: Pesanan, outlet: IdentitasOutlet, lebar: num
 
   // ── Rincian uang ──────────────────────────────────────────────────────
   tulis(kolom('Subtotal', uang(pesanan.subtotal), lebar))
-  if (pesanan.layanan > 0) tulis(kolom('Layanan', uang(pesanan.layanan), lebar))
-  if (pesanan.pajak > 0) tulis(kolom('Pajak', uang(pesanan.pajak), lebar))
+  // Layanan & pajak SELALU dicetak, walau nol — sepola layar nota dan layar
+  // status pelanggan. Pungutan wajib yang tak tercantum bikin orang mengira
+  // ada yang disembunyikan, dan yang lebih buruk: kertas yang menghilangkan
+  // baris nol tak lagi sama dengan layar yang menampilkannya. Kalau pelanggan
+  // membandingkan keduanya, yang goyah adalah kepercayaan pada dua-duanya.
+  tulis(kolom('Layanan', uang(pesanan.layanan), lebar))
+  tulis(kolom('Pajak', uang(pesanan.pajak), lebar))
 
   tulis('='.repeat(lebar))
   // Tinggi dobel, lebar biasa -> jumlah karakter per baris tidak berubah.
   tulis(kolom('TOTAL', uang(pesanan.grand_total), lebar), 'tebal')
   tulis('='.repeat(lebar))
 
-  tulis('Terima kasih!', 'tengah')
+  tulis('Terima kasih', 'tengah')
 
   return baris
 }
