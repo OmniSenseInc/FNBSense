@@ -36,6 +36,17 @@ class UpdateSettingRequest extends FormRequest
             // sana bukan cuma gambar rusak — ia gambar rusak di layar yang
             // paling tidak boleh membuat orang ragu.
             'qris_image_url' => ['sometimes', 'nullable', 'url', 'max:'.OrderSetting::MAX_QRIS_URL_LENGTH],
+            // nullable: kafe yang tak ingin alamat/telepon di struk harus bisa
+            // mengosongkannya lagi, bukan cuma menggantinya.
+            //
+            // Sengaja TIDAK ada aturan format untuk telepon. Nomor kafe ditulis
+            // orang dengan segala macam gaya (+62, spasi, tanda hubung, dua
+            // nomor sekaligus), dan menolak yang tak sesuai pola cuma akan
+            // menghalangi owner menulis nomornya sendiri dengan benar. Isinya
+            // dicetak apa adanya, tak pernah dipanggil sistem.
+            'outlet_name' => ['sometimes', 'nullable', 'string', 'max:'.OrderSetting::MAX_OUTLET_NAME_LENGTH],
+            'outlet_address' => ['sometimes', 'nullable', 'string', 'max:'.OrderSetting::MAX_OUTLET_ADDRESS_LENGTH],
+            'outlet_phone' => ['sometimes', 'nullable', 'string', 'max:'.OrderSetting::MAX_OUTLET_PHONE_LENGTH],
         ];
     }
 

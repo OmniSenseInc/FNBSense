@@ -47,6 +47,20 @@ class OrderSetting extends Model
     public const MAX_QRIS_URL_LENGTH = 1024;
 
     /**
+     * Batas panjang identitas outlet — dipilih dari lebar kertas struk, bukan
+     * dari kenyamanan DB.
+     *
+     * Struk 58mm memuat 32 karakter per baris, dan nama dicetak ukuran dobel
+     * sehingga muat 16. 60 memberi ruang tiga baris terbungkus; lebih dari itu
+     * kepala struk memakan kertas lebih banyak daripada isinya.
+     */
+    public const MAX_OUTLET_NAME_LENGTH = 60;
+
+    public const MAX_OUTLET_ADDRESS_LENGTH = 120;
+
+    public const MAX_OUTLET_PHONE_LENGTH = 30;
+
+    /**
      * tenant_id & outlet_id TIDAK fillable: keduanya berasal dari klaim JWT,
      * diisi eksplisit di controller. Kalau fillable, owner bisa mengirim
      * outlet_id milik siapa pun lewat body dan menulis tarif outlet orang lain.
@@ -59,6 +73,12 @@ class OrderSetting extends Model
         // kepemilikan seperti tenant_id/outlet_id di atas. Outlet mana yang
         // ditulis tetap ditentukan klaim JWT di controller.
         'qris_image_url',
+        // Sama amannya: identitas yang DITAMPILKAN outlet, bukan penentu
+        // kepemilikannya. Yang menentukan baris mana yang ditulis tetap klaim
+        // JWT di controller, bukan isi body.
+        'outlet_name',
+        'outlet_address',
+        'outlet_phone',
     ];
 
     protected function casts(): array

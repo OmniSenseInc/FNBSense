@@ -88,6 +88,72 @@ class SettingTest extends TestCase
             ->assertStatus(422);
     }
 
+    /** Identitas outlet — kepala struk yang dipegang pelanggan. */
+    public function test_owner_bisa_menyimpan_identitas_outlet(): void
+    {
+        $this->withHeaders($this->authHeaders($this->tenantId, $this->outletId))
+            ->putJson('/api/settings', [
+                'outlet_name' => 'Kopi Senja',
+                'outlet_address' => 'Jl. Contoh No. 123',
+                'outlet_phone' => '0812-3456-7890',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.outlet_name', 'Kopi Senja')
+            ->assertJsonPath('data.outlet_address', 'Jl. Contoh No. 123')
+            ->assertJsonPath('data.outlet_phone', '0812-3456-7890');
+    }
+
+    /**
+     * Harus bisa DIKOSONGKAN lagi, bukan cuma diganti.
+     *
+     * Kafe yang tak ingin alamatnya tercetak di struk tak punya jalan lain, dan
+     * "kosong" bukan hal yang sama dengan "tidak ada" — yang pertama tetap
+     * memakan baris di kertas.
+     */
+    public function test_identitas_outlet_bisa_dicabut(): void
+    {
+        $headers = $this->authHeaders($this->tenantId, $this->outletId);
+
+        $this->withHeaders($headers)
+            ->putJson('/api/settings', ['outlet_address' => 'Jl. Contoh No. 123'])
+            ->assertOk();
+
+        $this->withHeaders($headers)
+            ->putJson('/api/settings', ['outlet_address' => null])
+            ->assertOk()
+            ->assertJsonPath('data.outlet_address', null);
+    }
+
+    /**
+     * Nama terlalu panjang ditolak — batasnya lebar kertas, bukan selera.
+     *
+     * Menunjuk konstanta, bukan menulis 61: kalau batasnya diubah, test ini
+     * ikut pindah sendiri alih-alih diam-diam menguji aturan yang sudah tak
+     * berlaku.
+     */
+    public function test_nama_outlet_melebihi_batas_ditolak(): void
+    {
+        $this->withHeaders($this->authHeaders($this->tenantId, $this->outletId))
+            ->putJson('/api/settings', [
+                'outlet_name' => str_repeat('a', OrderSetting::MAX_OUTLET_NAME_LENGTH + 1),
+            ])
+            ->assertStatus(422);
+    }
+
+    /** Batas identitas ikut dikirim supaya layar tak menyalinnya. */
+    public function test_batas_identitas_outlet_ikut_dikirim(): void
+    {
+        $this->withHeaders($this->authHeaders($this->tenantId, $this->outletId))
+            ->getJson('/api/settings')
+            ->assertOk()
+            ->assertJsonPath('data.limits.outlet_name_max', OrderSetting::MAX_OUTLET_NAME_LENGTH)
+            ->assertJsonPath(
+                'data.limits.outlet_address_max',
+                OrderSetting::MAX_OUTLET_ADDRESS_LENGTH,
+            )
+            ->assertJsonPath('data.limits.outlet_phone_max', OrderSetting::MAX_OUTLET_PHONE_LENGTH);
+    }
+
     /** Simpan pertama kali: baris lahir di sini. */
     public function test_owner_bisa_menyimpan_tarif(): void
     {

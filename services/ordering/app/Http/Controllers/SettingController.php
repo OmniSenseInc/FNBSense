@@ -76,6 +76,9 @@ class SettingController extends Controller
             'order_expiry_minutes_max' => OrderSetting::MAX_EXPIRY_MINUTES,
             'qris_max_kilobytes' => UploadQrisRequest::MAX_KILOBYTES,
             'qris_max_pixels' => UploadQrisRequest::MAX_PIXELS,
+            'outlet_name_max' => OrderSetting::MAX_OUTLET_NAME_LENGTH,
+            'outlet_address_max' => OrderSetting::MAX_OUTLET_ADDRESS_LENGTH,
+            'outlet_phone_max' => OrderSetting::MAX_OUTLET_PHONE_LENGTH,
         ];
     }
 
