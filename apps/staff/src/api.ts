@@ -423,6 +423,108 @@ export async function batalkanPesanan(id: string): Promise<void> {
   })
 }
 
+export type Meja = {
+  id: string
+  label: string
+  aktif: boolean
+  /**
+   * Kunci yang membuka meja ini bagi pelanggan.
+   *
+   * Di endpoint lain kolom ini `$hidden` di model — ia cuma dibuka untuk owner,
+   * dan cuma karena owner perlu mencetaknya. Perlakukan seperti kredensial:
+   * jangan pernah dikirim ke mana pun selain QR di layar ini.
+   */
+  qrToken: string
+}
+
+export function petakanMeja(m: Record<string, unknown>): Meja {
+  return {
+    id: String(m.id),
+    label: String(m.label ?? ''),
+    // Kolomnya tinyint: Eloquent mengirim true/false hari ini, tapi cast yang
+    // berubah membuatnya datang sebagai 1/0. Keduanya diterima; apa pun selain
+    // itu dianggap TIDAK aktif — meja yang keliru dianggap aktif berarti QR
+    // yang seharusnya mati tetap menerima pesanan.
+    aktif: m.is_active === true || m.is_active === 1,
+    qrToken: typeof m.qr_token === 'string' ? m.qr_token : '',
+  }
+}
+
+/**
+ * Alamat yang ditanam di dalam QR meja.
+ *
+ * Menunjuk app PELANGGAN, bukan app ini — dan karena itu wajib URL penuh dari
+ * VITE_CUSTOMER_URL, bukan path relatif seperti alamat service lainnya. Yang
+ * memindainya HP orang lain: path relatif akan dibaca sebagai alamat app staf,
+ * dan QR-nya mati di tangan pelanggan pertama.
+ *
+ * null kalau belum disetel — layar menolak menggambar QR daripada membuat
+ * owner mencetak setumpuk stiker yang menunjuk "undefined".
+ */
+export function urlMeja(qrToken: string): string | null {
+  const basis: unknown = import.meta.env.VITE_CUSTOMER_URL
+
+  if (typeof basis !== 'string' || basis === '') return null
+
+  return `${basis.replace(/\/+$/, '')}/t/${qrToken}`
+}
+
+/** Semua meja outlet ini, sudah diurut label oleh server. */
+export async function ambilMeja(): Promise<Meja[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/tables')
+
+  return Array.isArray(data) ? data.map(petakanMeja) : []
+}
+
+export async function buatMeja(label: string): Promise<Meja> {
+  const data = await panggil<Record<string, unknown>>('/api/tables', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+
+  return petakanMeja(data)
+}
+
+/**
+ * Ubah label atau status aktif.
+ *
+ * Hanya yang disebut yang dikirim: server memakai `sometimes`, jadi mengirim
+ * label saat yang diubah cuma saklarnya berarti ikut menimpa nama meja dengan
+ * salinan yang mungkin sudah basi di layar.
+ */
+export async function ubahMeja(
+  id: string,
+  ubah: { label?: string; aktif?: boolean },
+): Promise<Meja> {
+  const badan: Record<string, unknown> = {}
+  if (ubah.label !== undefined) badan.label = ubah.label
+  if (ubah.aktif !== undefined) badan.is_active = ubah.aktif
+
+  const data = await panggil<Record<string, unknown>>(`/api/tables/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(badan),
+  })
+
+  return petakanMeja(data)
+}
+
+/**
+ * Terbitkan QR baru untuk meja ini. QR lama langsung mati.
+ *
+ * Identitas mejanya tidak berubah, jadi riwayat pesanan lama tetap menempel.
+ * Dipakai saat stiker QR difoto orang dan mulai dipakai dari luar kafe.
+ */
+export async function putarQr(id: string): Promise<Meja> {
+  const data = await panggil<Record<string, unknown>>(
+    `/api/tables/${encodeURIComponent(id)}/rotate-qr`,
+    { method: 'POST' },
+  )
+
+  return petakanMeja(data)
+}
+
 /**
  * Rentang yang boleh diisi owner, DATANG DARI SERVER.
  *

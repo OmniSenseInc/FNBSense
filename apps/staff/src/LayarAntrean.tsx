@@ -229,9 +229,14 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
               terkunci. Kasir yang mengetik /setelan tetap ditolak server, bukan
               oleh hilangnya tombol ini. */}
           {owner && (
-            <Link to="/setelan" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-              Setelan
-            </Link>
+            <>
+              <Link to="/meja" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+                Meja
+              </Link>
+              <Link to="/setelan" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+                Setelan
+              </Link>
+            </>
           )}
           <button
             type="button"

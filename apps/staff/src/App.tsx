@@ -4,6 +4,7 @@ import { bacaToken } from './api'
 import LayarAntrean from './LayarAntrean'
 import LayarDibuat from './LayarDibuat'
 import LayarLogin from './LayarLogin'
+import LayarMeja from './LayarMeja'
 import LayarNota from './LayarNota'
 import LayarRiwayat from './LayarRiwayat'
 import LayarSetelan from './LayarSetelan'
@@ -49,6 +50,9 @@ export default function App() {
               berarti dua tempat memutuskan hal yang sama, dan yang di sini
               justru yang paling mudah dibohongi. */}
           <Route path="/setelan" element={<LayarSetelan onKeluar={keluar} />} />
+          {/* Sama seperti /setelan: penjaganya `role:owner` di Ordering, bukan
+              di sini. */}
+          <Route path="/meja" element={<LayarMeja onKeluar={keluar} />} />
           <Route path="/nota/:id" element={<LayarNota onKeluar={keluar} />} />
           {/* Alamat asing dikembalikan ke antrean, bukan dibiarkan jadi layar
               putih — kasir tak punya cara menebak apa yang salah. */}
