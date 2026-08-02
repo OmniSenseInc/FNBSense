@@ -6,6 +6,7 @@ import {
   petakanPesanan,
   petakanSetelan,
   SESI_HABIS,
+  simpanSetelan,
 } from './api'
 
 /** localStorage palsu — vitest berjalan di Node, tak ada penyimpanan browser. */
@@ -74,6 +75,15 @@ describe('petakanSetelan', () => {
     expect(petakanSetelan({ ...mentah, qris_image_url: null }).qrisUrl).toBeNull()
   })
 
+  it('identitas kosong dari server jadi null, bukan string kosong', () => {
+    // Dua keadaan yang artinya sama ("belum diisi") harus tiba di layar sebagai
+    // satu nilai, kalau tidak tiap tempat yang memakainya harus memeriksa dua.
+    const hasil = petakanSetelan({ ...mentah, outlet_name: '', outlet_phone: '   ' })
+
+    expect(hasil.namaOutlet).toBeNull()
+    expect(hasil.teleponOutlet).toBeNull()
+  })
+
   it('batas dibaca dari server', () => {
     expect(petakanSetelan(mentah).batas.tax_percent_max).toBe(30)
     expect(petakanSetelan(mentah).batas.order_expiry_minutes_max).toBe(1440)
@@ -88,6 +98,39 @@ describe('petakanSetelan', () => {
 
     expect(Number.isNaN(petakanSetelan(tanpaBatas).batas.tax_percent_max)).toBe(true)
     expect(petakanSetelan(tanpaBatas).pajakPersen).toBe(11)
+  })
+})
+
+describe('simpanSetelan', () => {
+  it('kotak identitas yang dikosongkan dikirim sebagai null, bukan ""', async () => {
+    // Bedanya nyata di kertas: null berarti barisnya tak dicetak, "" berarti
+    // baris kosong yang tetap memakan tempat di kepala struk. Owner yang
+    // menghapus isinya jelas memaksudkan yang pertama.
+    pasangPenyimpanan({ 'fnb.staff.token': 'sehat' })
+    // Parameternya disebutkan supaya init-nya bisa diperiksa: mock tanpa
+    // parameter membuat mock.calls bertipe tuple kosong.
+    const kirim = vi.fn(async (_jalur: string, init?: RequestInit) => {
+      void init
+
+      return respons(200, { data: {} })
+    })
+    vi.stubGlobal('fetch', kirim)
+
+    await simpanSetelan({
+      pajakPersen: 11,
+      layananPersen: 5,
+      kedaluwarsaMenit: 30,
+      namaOutlet: 'Kopi Senja',
+      alamatOutlet: '   ',
+      teleponOutlet: '',
+    })
+
+    const badan: Record<string, unknown> = JSON.parse(
+      (kirim.mock.calls[0][1] as RequestInit).body as string,
+    )
+    expect(badan.outlet_name).toBe('Kopi Senja')
+    expect(badan.outlet_address).toBeNull()
+    expect(badan.outlet_phone).toBeNull()
   })
 })
 

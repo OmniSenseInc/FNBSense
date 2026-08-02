@@ -22,6 +22,9 @@ function setelan(ubah: Partial<Setelan> = {}): Setelan {
     layananPersen: 5,
     kedaluwarsaMenit: 30,
     qrisUrl: '/storage/qris/abc.png',
+    namaOutlet: 'Kopi Senja',
+    alamatOutlet: 'Jl. Contoh No. 123',
+    teleponOutlet: '0812-3456-7890',
     batas: {
       tax_percent_max: 30,
       service_charge_percent_max: 30,
@@ -29,6 +32,9 @@ function setelan(ubah: Partial<Setelan> = {}): Setelan {
       order_expiry_minutes_max: 1440,
       qris_max_kilobytes: 2048,
       qris_max_pixels: 2000,
+      outlet_name_max: 60,
+      outlet_address_max: 120,
+      outlet_phone_max: 30,
     },
     ...ubah,
   }
@@ -85,12 +91,15 @@ describe('form tarif', () => {
     await tampilkanSiap()
 
     fireEvent.change(screen.getByLabelText(/Pajak/), { target: { value: '12.5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Simpan tarif' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan setelan' }))
 
     expect(simpanSetelan as Mock).toHaveBeenCalledWith({
       pajakPersen: 12.5,
       layananPersen: 5,
       kedaluwarsaMenit: 30,
+      namaOutlet: 'Kopi Senja',
+      alamatOutlet: 'Jl. Contoh No. 123',
+      teleponOutlet: '0812-3456-7890',
     })
   })
 
@@ -100,7 +109,7 @@ describe('form tarif', () => {
     ;(simpanSetelan as Mock).mockRejectedValue(new Error('Pajak melebihi batas 30%.'))
     await tampilkanSiap()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Simpan tarif' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan setelan' }))
 
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByText('Pajak melebihi batas 30%.')).toBeTruthy()
@@ -111,13 +120,53 @@ describe('form tarif', () => {
     const onKeluar = vi.fn()
     await tampilkanSiap(onKeluar)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Simpan tarif' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan setelan' }))
     // Satu putaran mikrotask: cukup untuk penolakan yang sudah terjadi
     // merambat lewat catch.
     await screen.findByLabelText(/Pajak/)
 
     expect(onKeluar).toHaveBeenCalled()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('identitas kafe', () => {
+  it('terisi dari server', async () => {
+    await tampilkanSiap()
+
+    expect((screen.getByLabelText('Nama kafe') as HTMLInputElement).value).toBe('Kopi Senja')
+    expect((screen.getByLabelText('Alamat') as HTMLInputElement).value).toBe('Jl. Contoh No. 123')
+    expect((screen.getByLabelText('Telepon') as HTMLInputElement).value).toBe('0812-3456-7890')
+  })
+
+  it('outlet yang belum punya identitas memberi kotak kosong, bukan "null"', async () => {
+    // Kalau null bocor ke kotak yang bisa diketik, ia tersimpan apa adanya
+    // begitu owner menekan Simpan — dan "null" tercetak di kepala struk.
+    ;(ambilSetelan as Mock).mockResolvedValue(
+      setelan({ namaOutlet: null, alamatOutlet: null, teleponOutlet: null }),
+    )
+    await tampilkanSiap()
+
+    expect((screen.getByLabelText('Nama kafe') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Telepon') as HTMLInputElement).value).toBe('')
+  })
+
+  it('ikut terkirim saat disimpan', async () => {
+    await tampilkanSiap()
+
+    fireEvent.change(screen.getByLabelText('Nama kafe'), { target: { value: 'Kopi Pagi' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan setelan' }))
+
+    expect(simpanSetelan as Mock).toHaveBeenCalledWith(
+      expect.objectContaining({ namaOutlet: 'Kopi Pagi' }),
+    )
+  })
+
+  it('batas panjang dari server dipasang ke kotaknya', async () => {
+    await tampilkanSiap()
+
+    expect((screen.getByLabelText('Nama kafe') as HTMLInputElement).maxLength).toBe(60)
+    expect((screen.getByLabelText('Alamat') as HTMLInputElement).maxLength).toBe(120)
   })
 })
 

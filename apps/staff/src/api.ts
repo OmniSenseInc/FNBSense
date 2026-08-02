@@ -540,6 +540,9 @@ export type BatasSetelan = {
   order_expiry_minutes_max: number
   qris_max_kilobytes: number
   qris_max_pixels: number
+  outlet_name_max: number
+  outlet_address_max: number
+  outlet_phone_max: number
 }
 
 export type Setelan = {
@@ -548,6 +551,14 @@ export type Setelan = {
   kedaluwarsaMenit: number
   /** Alamat gambar QRIS, relatif terhadap Ordering. null = belum dipasang. */
   qrisUrl: string | null
+  /**
+   * Identitas yang tercetak di kepala struk. null = belum diisi, dan barisnya
+   * tak dicetak sama sekali — beda dari string kosong yang tetap memakan
+   * kertas.
+   */
+  namaOutlet: string | null
+  alamatOutlet: string | null
+  teleponOutlet: string | null
   batas: BatasSetelan
 }
 
@@ -559,6 +570,17 @@ export type Setelan = {
  * ini bukan sekadar salah tampilan: owner yang melihat "Pajak 0%" padahal
  * servernya menagih 11% tak punya alasan untuk curiga.
  */
+/**
+ * Teks dari server -> teks atau null.
+ *
+ * String kosong ikut jadi null: kolom yang pernah diisi lalu dikosongkan bisa
+ * pulang sebagai "", dan membedakan "" dari null di seluruh layar berarti dua
+ * keadaan yang artinya sama harus diurus dua kali.
+ */
+function teksAtauNull(nilai: unknown): string | null {
+  return typeof nilai === 'string' && nilai.trim() !== '' ? nilai : null
+}
+
 export function petakanSetelan(m: Record<string, unknown>): Setelan {
   const batas = (m.limits ?? {}) as Record<string, unknown>
 
@@ -567,6 +589,9 @@ export function petakanSetelan(m: Record<string, unknown>): Setelan {
     layananPersen: keAngka(m.service_charge_percent),
     kedaluwarsaMenit: keAngka(m.order_expiry_minutes),
     qrisUrl: typeof m.qris_image_url === 'string' ? m.qris_image_url : null,
+    namaOutlet: teksAtauNull(m.outlet_name),
+    alamatOutlet: teksAtauNull(m.outlet_address),
+    teleponOutlet: teksAtauNull(m.outlet_phone),
     batas: {
       tax_percent_max: keAngka(batas.tax_percent_max),
       service_charge_percent_max: keAngka(batas.service_charge_percent_max),
@@ -574,6 +599,9 @@ export function petakanSetelan(m: Record<string, unknown>): Setelan {
       order_expiry_minutes_max: keAngka(batas.order_expiry_minutes_max),
       qris_max_kilobytes: keAngka(batas.qris_max_kilobytes),
       qris_max_pixels: keAngka(batas.qris_max_pixels),
+      outlet_name_max: keAngka(batas.outlet_name_max),
+      outlet_address_max: keAngka(batas.outlet_address_max),
+      outlet_phone_max: keAngka(batas.outlet_phone_max),
     },
   }
 }
@@ -607,7 +635,17 @@ export async function simpanSetelan(nilai: {
   pajakPersen: number
   layananPersen: number
   kedaluwarsaMenit: number
+  namaOutlet: string
+  alamatOutlet: string
+  teleponOutlet: string
 }): Promise<Setelan> {
+  // Kotak yang dikosongkan owner dikirim sebagai null, BUKAN "". Server
+  // menerima dua-duanya, tapi string kosong tersimpan sebagai baris kosong yang
+  // tetap memakan kertas di struk — sedangkan null berarti barisnya tak
+  // dicetak sama sekali. Yang dimaksud owner saat menghapus isinya jelas yang
+  // kedua.
+  const bersih = (teks: string): string | null => (teks.trim() === '' ? null : teks.trim())
+
   const data = await panggil<Record<string, unknown>>('/api/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -615,6 +653,9 @@ export async function simpanSetelan(nilai: {
       tax_percent: nilai.pajakPersen,
       service_charge_percent: nilai.layananPersen,
       order_expiry_minutes: nilai.kedaluwarsaMenit,
+      outlet_name: bersih(nilai.namaOutlet),
+      outlet_address: bersih(nilai.alamatOutlet),
+      outlet_phone: bersih(nilai.teleponOutlet),
     }),
   })
 

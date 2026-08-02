@@ -36,7 +36,14 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
   // Form disimpan sebagai TEKS, bukan angka: yang diketik owner adalah teks,
   // dan memaksanya jadi angka di tiap ketukan membuat kotak yang sedang
   // dikosongkan melompat kembali ke 0.
-  const [form, setForm] = useState({ pajak: '', layanan: '', kedaluwarsa: '' })
+  const [form, setForm] = useState({
+    pajak: '',
+    layanan: '',
+    kedaluwarsa: '',
+    nama: '',
+    alamat: '',
+    telepon: '',
+  })
   const [galat, setGalat] = useState<string | null>(null)
   const [kabar, setKabar] = useState<string | null>(null)
   const [sibuk, setSibuk] = useState(false)
@@ -52,6 +59,11 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
       pajak: teks(baru.pajakPersen),
       layanan: teks(baru.layananPersen),
       kedaluwarsa: teks(baru.kedaluwarsaMenit),
+      // null -> kotak kosong. Menampilkan "null" atau "-" di kotak yang bisa
+      // diketik akan tersimpan apa adanya begitu owner menekan Simpan.
+      nama: baru.namaOutlet ?? '',
+      alamat: baru.alamatOutlet ?? '',
+      telepon: baru.teleponOutlet ?? '',
     })
   }
 
@@ -94,9 +106,12 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
           pajakPersen: Number(form.pajak),
           layananPersen: Number(form.layanan),
           kedaluwarsaMenit: Number(form.kedaluwarsa),
+          namaOutlet: form.nama,
+          alamatOutlet: form.alamat,
+          teleponOutlet: form.telepon,
         }),
       )
-      setKabar('Tarif tersimpan.')
+      setKabar('Setelan tersimpan.')
     } catch (err) {
       tangani(err, 'Gagal menyimpan. Coba lagi.')
     } finally {
@@ -200,7 +215,56 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
             </section>
 
             <form onSubmit={simpan} className="rounded-md border border-slate-200 bg-white p-4">
-              <h2 className="text-base font-semibold">Tarif &amp; batas waktu</h2>
+              <h2 className="text-base font-semibold">Identitas kafe</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Dicetak di kepala struk. Yang dikosongkan tidak ikut tercetak.
+              </p>
+
+              {/* Tak satu pun wajib: struk tanpa nama masih berguna, dan
+                  memaksa owner mengisi alamat sebelum boleh menyimpan pajak
+                  akan menahan hal yang mendesak demi hal yang tidak. */}
+              <label className="mt-3 block text-sm">
+                Nama kafe
+                <input
+                  type="text"
+                  maxLength={batasInput(setelan.batas.outlet_name_max)}
+                  placeholder="Kopi Senja"
+                  value={form.nama}
+                  onChange={(e) => setForm({ ...form, nama: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                />
+              </label>
+
+              <label className="mt-3 block text-sm">
+                Alamat
+                <input
+                  type="text"
+                  maxLength={batasInput(setelan.batas.outlet_address_max)}
+                  placeholder="Jl. Contoh No. 123"
+                  value={form.alamat}
+                  onChange={(e) => setForm({ ...form, alamat: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                />
+              </label>
+
+              <label className="mt-3 block text-sm">
+                Telepon
+                <input
+                  // type="text", bukan "tel": nomor kafe ditulis dengan segala
+                  // macam gaya (+62, spasi, dua nomor sekaligus) dan isinya
+                  // cuma dicetak, tak pernah dipanggil sistem.
+                  type="text"
+                  maxLength={batasInput(setelan.batas.outlet_phone_max)}
+                  placeholder="0812-3456-7890"
+                  value={form.telepon}
+                  onChange={(e) => setForm({ ...form, telepon: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                />
+              </label>
+
+              <h2 className="mt-6 border-t border-slate-200 pt-4 text-base font-semibold">
+                Tarif &amp; batas waktu
+              </h2>
 
               {/* min/max diambil dari server, tidak ditulis di sini. Validasi
                   bawaan browser memberi peringatan dalam bahasa perangkat owner
@@ -256,7 +320,7 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                 disabled={sibuk}
                 className="mt-4 w-full rounded-md bg-slate-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
               >
-                {sibuk ? 'Menyimpan…' : 'Simpan tarif'}
+                {sibuk ? 'Menyimpan…' : 'Simpan setelan'}
               </button>
             </form>
           </div>
