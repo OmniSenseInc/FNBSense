@@ -35,6 +35,11 @@ Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
     // Dipakai kasir sekarang, layar dapur (KDS) nanti — satu pintu, bukan dua
     // jalur yang harus sama-sama benar.
     Route::post('cashier/orders/{id}/ready', [CashierOrderController::class, 'markReady']);
+
+    // Dibaca kasir, bukan cuma owner: identitas outlet di sini tercetak di
+    // kepala struk, dan yang mencetak struk adalah kasir. Yang MENGUBAH tetap
+    // owner saja (PUT & unggah QRIS di grup bawah).
+    Route::get('settings', [SettingController::class, 'show']);
 });
 
 // Manajemen meja & tarif — owner saja (JWT terverifikasi + role:owner).
@@ -46,7 +51,6 @@ Route::middleware(['jwt', 'role:owner'])->group(function () {
     Route::delete('tables/{id}', [TableController::class, 'destroy']);
     Route::post('tables/{id}/rotate-qr', [TableController::class, 'rotateQr']);
 
-    Route::get('settings', [SettingController::class, 'show']);
     Route::put('settings', [SettingController::class, 'update']);
     // Unggah gambar QRIS. Endpoint sendiri, bukan menumpang PUT settings:
     // yang satu multipart berisi berkas, yang lain JSON berisi angka tarif —

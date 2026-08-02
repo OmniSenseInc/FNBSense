@@ -236,6 +236,53 @@ class SettingTest extends TestCase
         $this->assertDatabaseHas('order_settings', ['outlet_id' => $this->outletId, 'tax_percent' => 5.00]);
     }
 
+    /**
+     * Kasir boleh MEMBACA setelan — identitasnya tercetak di kepala struk.
+     *
+     * Tanpa ini kasir kehilangan nama kafe tepat di layar tempat ia mencetak,
+     * dan yang keluar adalah struk tanpa kepala.
+     */
+    public function test_kasir_bisa_membaca_identitas_untuk_struk(): void
+    {
+        OrderSetting::defaultsFor($this->tenantId, $this->outletId)
+            ->fill(['outlet_name' => 'Kopi Senja', 'outlet_phone' => '0812-3456-7890'])
+            ->save();
+
+        $this->withHeaders($this->authHeaders($this->tenantId, $this->outletId, 'cashier'))
+            ->getJson('/api/settings')
+            ->assertOk()
+            ->assertJsonPath('data.outlet_name', 'Kopi Senja')
+            ->assertJsonPath('data.outlet_phone', '0812-3456-7890');
+    }
+
+    /**
+     * Daftar medan yang keluar dikunci PERSIS.
+     *
+     * Endpoint ini kini terbuka untuk kasir, jadi kolom apa pun yang kelak
+     * ditambahkan ke order_settings ikut terkirim kalau jawabannya dirakit dari
+     * toArray(). Test ini adalah pagarnya: menambah kolom tanpa memutuskan
+     * apakah kasir boleh melihatnya akan membuatnya merah. assertSame, bukan
+     * assertArrayHasKey — yang dijaga justru medan yang TIDAK ada di sini.
+     */
+    public function test_jawaban_setelan_hanya_memuat_medan_yang_diizinkan(): void
+    {
+        $data = $this->withHeaders($this->authHeaders($this->tenantId, $this->outletId, 'cashier'))
+            ->getJson('/api/settings')
+            ->assertOk()
+            ->json('data');
+
+        $this->assertSame([
+            'tax_percent',
+            'service_charge_percent',
+            'order_expiry_minutes',
+            'qris_image_url',
+            'outlet_name',
+            'outlet_address',
+            'outlet_phone',
+            'limits',
+        ], array_keys($data));
+    }
+
     /** Kasir tak boleh mengubah tarif. */
     public function test_kasir_tidak_boleh_mengubah_tarif(): void
     {

@@ -13,11 +13,17 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
- * Tarif transaksi outlet — owner saja.
+ * Tarif & identitas outlet. Dibaca kasir, diubah owner.
  *
  * Outlet yang belum pernah dikonfigurasi TIDAK punya baris di DB. show() sengaja
  * mengembalikan default bertarif 0 tanpa menulis apa pun: membaca setting tidak
  * boleh diam-diam membuat data.
+ *
+ * Jawabannya dirakit medan per medan di respond(), bukan dari toArray(). Sejak
+ * kasir ikut membaca endpoint ini, kolom apa pun yang kelak ditambahkan ke
+ * order_settings — harga pokok, kunci merchant, apa saja — akan ikut terkirim
+ * kalau modelnya diserahkan utuh. Daftar di respond() adalah daftar-izin: yang
+ * baru tidak keluar sampai seseorang menuliskannya ke sana dengan sadar.
  */
 class SettingController extends Controller
 {
@@ -53,7 +59,16 @@ class SettingController extends Controller
      */
     private function respond(OrderSetting $setting): JsonResponse
     {
-        return response()->json(['data' => $setting->toArray() + ['limits' => self::limits()]]);
+        return response()->json(['data' => [
+            'tax_percent' => $setting->tax_percent,
+            'service_charge_percent' => $setting->service_charge_percent,
+            'order_expiry_minutes' => $setting->order_expiry_minutes,
+            'qris_image_url' => $setting->qris_image_url,
+            'outlet_name' => $setting->outlet_name,
+            'outlet_address' => $setting->outlet_address,
+            'outlet_phone' => $setting->outlet_phone,
+            'limits' => self::limits(),
+        ]]);
     }
 
     /**
