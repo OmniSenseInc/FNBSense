@@ -188,8 +188,9 @@ class CashierOrderController extends Controller
         $tenantId = $this->tenantId($request);
         $outletId = $this->outletId($request);
         $reason = $request->validated()['reason'] ?? null;
+        $userId = $this->userId($request);
 
-        $order = DB::transaction(function () use ($id, $tenantId, $outletId, $reason) {
+        $order = DB::transaction(function () use ($id, $tenantId, $outletId, $reason, $userId) {
             $order = Order::query()
                 ->where('tenant_id', $tenantId)
                 ->where('outlet_id', $outletId)
@@ -205,13 +206,24 @@ class CashierOrderController extends Controller
                 throw new HttpException(409, 'Order tidak lagi bisa dibatalkan.');
             }
 
+            $occurredAt = Carbon::now();
+
             $order->status = OrderStatus::Cancelled;
+            // Siapa yang membatalkan. Owner tak punya cara lain untuk tahu:
+            // pesanan batal hilang dari antrean tanpa meninggalkan pelaku.
+            $order->cancelled_by = $userId;
             // order.note tak diisi saat order dibuat (customer tak mengirim note
             // tingkat order), jadi aman menyimpan alasan pembatalan di sini.
             if ($reason !== null) {
                 $order->note = $reason;
             }
             $order->save();
+
+            // Di DALAM transaksi, bersama perubahan statusnya. Kalau di luar,
+            // ada celah di mana pesanan sudah batal tapi eventnya tak pernah
+            // lahir — dan owner tak akan pernah tahu, tanpa satu pun jejak
+            // bahwa ada yang hilang.
+            $this->recordCancelled($order, $tenantId, $outletId, $reason, $userId, $occurredAt);
 
             return $order;
         });
@@ -287,6 +299,44 @@ class CashierOrderController extends Controller
                 'tenant_id' => $tenantId,
                 'outlet_id' => $outletId,
                 'payload' => $payload,
+            ],
+            'occurred_at' => $occurredAt,
+        ]);
+    }
+
+    /**
+     * Catat pembatalan ke outbox, untuk diteruskan relay ke Notification.
+     *
+     * Nominalnya ikut dikirim. Owner yang melihat "pesanan dibatalkan" tanpa
+     * angka tak bisa membedakan segelas kopi yang salah pesan dari rombongan
+     * dua juta yang batal — dan itu justru satu-satunya alasan ia perlu
+     * diberi tahu sama sekali.
+     */
+    private function recordCancelled(
+        Order $order,
+        string $tenantId,
+        string $outletId,
+        ?string $reason,
+        string $userId,
+        Carbon $occurredAt,
+    ): void {
+        Outbox::create([
+            'aggregate_type' => 'order',
+            'aggregate_id' => $order->id,
+            'event_type' => 'order.cancelled',
+            'payload' => [
+                'event_id' => (string) Str::uuid(),
+                'event_type' => 'order.cancelled',
+                'occurred_at' => $occurredAt->toIso8601String(),
+                'tenant_id' => $tenantId,
+                'outlet_id' => $outletId,
+                'payload' => [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'grand_total' => (int) $order->grand_total,
+                    'reason' => $reason,
+                    'cancelled_by' => $userId,
+                ],
             ],
             'occurred_at' => $occurredAt,
         ]);

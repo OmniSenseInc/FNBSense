@@ -371,7 +371,58 @@ class CashierOrderTest extends TestCase
             'id' => $order->id,
             'status' => 'cancelled',
             'note' => 'Pelanggan batal',
+            // Owner tak punya cara lain untuk tahu siapa yang membatalkan:
+            // pesanan batal hilang dari antrean tanpa meninggalkan pelaku.
+            'cancelled_by' => $this->cashierId,
         ]);
+    }
+
+    /**
+     * Pembatalan menerbitkan event, dan nominalnya ikut.
+     *
+     * Sengaja DIBALIK dari versi pertama test ini, yang mengunci "cancel tidak
+     * menerbitkan apa pun". Owner yang melihat "pesanan dibatalkan" tanpa angka
+     * tak bisa membedakan segelas kopi salah pesan dari rombongan dua juta yang
+     * batal — dan itu justru satu-satunya alasan ia perlu diberi tahu.
+     */
+    public function test_cancel_menerbitkan_event_beserta_nominalnya(): void
+    {
+        $order = $this->makeOrder();
+
+        $this->withHeaders($this->cashierHeaders())
+            ->postJson("/api/cashier/orders/{$order->id}/cancel", ['reason' => 'Pelanggan batal'])
+            ->assertOk();
+
+        $this->assertSame(1, Outbox::count());
+
+        $baris = Outbox::first();
+        $amplop = is_array($baris->payload) ? $baris->payload : json_decode($baris->payload, true);
+
+        $this->assertSame('order.cancelled', $baris->event_type);
+        $this->assertSame($order->id, $baris->aggregate_id);
+        $this->assertSame($this->tenantId, $amplop['tenant_id']);
+        $this->assertSame($this->outletId, $amplop['outlet_id']);
+        $this->assertSame($order->order_number, $amplop['payload']['order_number']);
+        $this->assertSame((int) $order->grand_total, $amplop['payload']['grand_total']);
+        $this->assertSame('Pelanggan batal', $amplop['payload']['reason']);
+        $this->assertSame($this->cashierId, $amplop['payload']['cancelled_by']);
+    }
+
+    /**
+     * Pembatalan yang DITOLAK tidak boleh meninggalkan event.
+     *
+     * Event lahir di dalam transaksi yang sama dengan perubahan status. Kalau
+     * ia bocor ke luar, owner menerima kabar pembatalan untuk pesanan yang
+     * sebenarnya masih hidup dan masih akan dibayar.
+     */
+    public function test_cancel_yang_ditolak_tidak_menerbitkan_event(): void
+    {
+        $order = $this->makeOrder(OrderStatus::Paid);
+
+        $this->withHeaders($this->cashierHeaders())
+            ->postJson("/api/cashier/orders/{$order->id}/cancel", ['reason' => 'Salah pencet'])
+            ->assertStatus(409);
+
         $this->assertSame(0, Outbox::count());
     }
 
