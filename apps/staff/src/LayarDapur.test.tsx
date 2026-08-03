@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { ambilRiwayat, tandaiSiap } from './api'
-import LayarDibuat from './LayarDibuat'
+import LayarDapur from './LayarDapur'
 
 // Seluruh modul api diganti: layar ini tak boleh menyentuh jaringan. Yang diuji
 // adalah PENYAMBUNGANNYA — penyaringan dan pengurutannya sendiri sudah diuji
@@ -49,7 +49,7 @@ function lunas(id: string, nomor: string, note = '') {
 function tampilkan(onKeluar: () => void = () => {}) {
   return render(
     <MemoryRouter>
-      <LayarDibuat onKeluar={onKeluar} />
+      <LayarDapur onKeluar={onKeluar} />
     </MemoryRouter>,
   )
 }
@@ -63,7 +63,7 @@ beforeEach(() => {
 // di LayarAntrean.test.tsx.
 afterEach(cleanup)
 
-describe('daftar pesanan yang sedang dibuat', () => {
+describe('layar dapur', () => {
   it('menampilkan isi pesanan berikut catatannya', async () => {
     // Catatan seperti "tanpa gula" tak punya tempat lain selama layar dapur
     // belum ada: kalau ia hilang di sini, ia hilang dari seluruh sistem.

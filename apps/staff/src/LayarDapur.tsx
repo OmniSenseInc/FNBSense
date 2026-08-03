@@ -10,22 +10,32 @@ import { jam, labelMeja } from './format'
  * Layar ini dipolling justru karena isinya datang sendiri: tiap pesanan yang
  * dikonfirmasi kasir muncul di sini beberapa detik kemudian. Riwayat tak
  * dipolling karena ia tempat yang DIDATANGI untuk mencari satu hal tertentu.
+ *
+ * WebSocket KDS (F3b) sengaja belum dipakai di sini. Ia cuma mengabari pesanan
+ * BARU — layar yang baru dibuka tetap butuh muat awal, jadi ia tambahan, bukan
+ * pengganti. Dan ia menuntut satu proses lagi yang harus ingat dinyalakan;
+ * kalau lupa, dapur diam tanpa tanda apa pun. Polling tak punya moda gagal itu.
  */
 const JEDA_MS = 5000
 
 /**
- * Pesanan yang sudah dibayar tapi belum diserahkan.
+ * Layar dapur: pesanan yang sudah dibayar tapi belum diserahkan.
  *
  * Layar inilah yang mengisi `ready_at`, dan `ready_at` itulah yang menyalakan
  * titik ketiga di HP pelanggan ("Siap diantar"). Tanpa layar ini, kabar untuk
  * pelanggan berhenti tepat setelah pembayarannya masuk — persis di titik dia
  * mulai benar-benar menunggu.
  *
- * Kasir yang menekannya, bukan dapur — untuk sekarang. Kolom dan endpoint-nya
- * tak menyebut siapa, jadi layar KDS nanti tinggal memakai yang sama tanpa
- * mengubah apa pun di server.
+ * Dibaca dari jarak ~2 meter oleh orang yang tangannya basah atau berlumur
+ * tepung, jadi ukuran hurufnya diatur untuk itu, bukan untuk HP di genggaman.
+ *
+ * Nol tombol uang. Akunnya memang sama dengan kasir (yang meracik dan yang
+ * menerima uang biasanya orang yang sama), jadi pemisahan ini kebiasaan, bukan
+ * pagar — pagarnya tetap `role:cashier,owner` di server. Yang dijaga di sini
+ * cuma satu: tak ada tombol terminal (bayar/batal) yang bisa tersenggol tangan
+ * yang sedang sibuk.
  */
-export default function LayarDibuat({ onKeluar }: { onKeluar: () => void }) {
+export default function LayarDapur({ onKeluar }: { onKeluar: () => void }) {
   const [daftar, setDaftar] = useState<Pesanan[] | null>(null)
   const [galat, setGalat] = useState<string | null>(null)
   /** Baris yang penandaannya sedang jalan — kunci anti klik ganda. */
@@ -102,55 +112,71 @@ export default function LayarDibuat({ onKeluar }: { onKeluar: () => void }) {
           ← Antrean
         </Link>
         <div className="text-right">
-          <h1 className="text-base font-semibold">Sedang dibuat</h1>
+          <h1 className="text-xl font-semibold">Dapur</h1>
           <p className="text-sm text-slate-600">
             {daftar === null ? 'Memuat…' : `${daftar.length} pesanan`}
           </p>
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-4 py-4">
+      {/* Lebih lebar dari layar kasir dan berkolom: tablet dapur dipasang
+          mendatar, dan yang mahal di dapur bukan ruang layar melainkan menggulir
+          dengan tangan berlumur tepung. Beberapa pesanan pertama harus terlihat
+          sekaligus. */}
+      <main className="mx-auto max-w-6xl px-4 py-4">
         {galat && (
-          <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-base text-red-700">
             {galat}
           </p>
         )}
 
         {daftar !== null && daftar.length === 0 && (
-          <p className="py-16 text-center text-sm text-slate-600">
+          <p className="py-16 text-center text-lg text-slate-600">
             Tak ada pesanan yang menunggu dibuat.
           </p>
         )}
 
-        <ul className="flex flex-col gap-3">
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {daftar?.map((pesanan) => {
             const meja = labelMeja(pesanan.meja, pesanan.tipe)
 
             return (
               <li key={pesanan.id} className="rounded-md border border-slate-200 bg-white p-4">
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-lg font-semibold">
-                    <span className="tabular-nums">{pesanan.order_number}</span>
-                    {meja && <span className="ml-2 text-slate-600">· {meja}</span>}
-                  </p>
+                  <p className="text-3xl font-bold tabular-nums">{pesanan.order_number}</p>
                   {/* Jam BAYAR, bukan jam pesan: hitungan menunggu pelanggan di
                       layar ini mulai sejak uangnya diterima. */}
                   <p className="text-sm text-slate-600">dibayar {jam(pesanan.waktuBayar)}</p>
                 </div>
-                <p className="text-sm text-slate-600">{pesanan.customer_name}</p>
+                {/* Meja dapat barisnya sendiri dan ikut dibesarkan: inilah
+                    satu-satunya petunjuk ke mana minumannya diantar, dan di
+                    kartu kasir ia sempat menumpang di belakang nomor. */}
+                <p className="text-xl">
+                  {meja && <span className="font-semibold">{meja}</span>}
+                  {meja && <span className="text-slate-400"> · </span>}
+                  <span className="text-slate-600">{pesanan.customer_name}</span>
+                </p>
 
                 {/* Isi pesanan ikut ditampilkan, bukan cuma nomornya: daftar ini
-                    adalah lembar kerja orang yang meracik, dan catatan seperti
-                    "tanpa gula" tak punya tempat lain selama layar dapur belum
-                    ada. */}
-                <ul className="mt-3 flex flex-col gap-1">
+                    adalah lembar kerja orang yang meracik. */}
+                <ul className="mt-3 flex flex-col gap-2">
                   {pesanan.items.map((item, i) => (
                     // Kunci pakai indeks: satu pesanan bisa memuat produk sama
                     // dua baris dengan catatan berbeda, dan daftar ini tak pernah
                     // diurut ulang.
-                    <li key={i} className="text-sm">
-                      <span className="tabular-nums font-semibold">{item.qty}×</span> {item.nama}
-                      {item.note && <span className="block text-slate-600">— {item.note}</span>}
+                    <li key={i} className="text-xl">
+                      <span className="text-2xl font-bold tabular-nums">{item.qty}×</span>{' '}
+                      {item.nama}
+                      {/* Catatan dijadikan blok berwarna, bukan baris abu-abu
+                          seperti di kartu kasir. Nama produk yang salah baca
+                          masih ketahuan saat menuang; "tanpa gula" yang terlewat
+                          baru ketahuan setelah gelasnya sampai ke meja dan harus
+                          dibuang. */}
+                      {item.note && (
+                        <span className="mt-1 block rounded bg-amber-50 px-2 py-1 text-lg font-semibold text-amber-800">
+                          {item.note}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -159,12 +185,12 @@ export default function LayarDibuat({ onKeluar }: { onKeluar: () => void }) {
                     bayar dan batal. Menandai siap tidak terminal: salah tekan
                     paling jauh membuat pelanggan datang sedikit terlalu cepat,
                     dan penandaan ulang tak menggeser apa pun. Konfirmasi di
-                    sini cuma akan melatih kasir menekan dua kali tanpa membaca. */}
+                    sini cuma akan melatih tangan menekan dua kali tanpa membaca. */}
                 <button
                   type="button"
                   disabled={kirimId !== null}
                   onClick={() => siap(pesanan)}
-                  className="mt-3 w-full rounded-md bg-slate-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
+                  className="mt-4 w-full rounded-md bg-slate-900 px-4 py-4 text-xl font-semibold text-white disabled:opacity-50"
                 >
                   {kirimId === pesanan.id ? 'Menyimpan…' : 'Siap diantar'}
                 </button>

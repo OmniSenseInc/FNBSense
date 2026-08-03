@@ -277,8 +277,8 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
               </span>
             )}
           </Link>
-          <Link to="/dibuat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-            Sedang dibuat
+          <Link to="/dapur" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+            Dapur
           </Link>
           <Link to="/riwayat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
             Riwayat

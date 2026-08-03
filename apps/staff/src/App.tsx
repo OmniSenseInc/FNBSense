@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { bacaToken } from './api'
 import LayarAntrean from './LayarAntrean'
-import LayarDibuat from './LayarDibuat'
+import LayarDapur from './LayarDapur'
 import LayarLogin from './LayarLogin'
 import LayarMeja from './LayarMeja'
 import LayarNota from './LayarNota'
@@ -46,9 +46,15 @@ export default function App() {
               penuh lebih terbaca daripada kotak yang menggantung. */}
           <Route path="/notifikasi" element={<LayarNotifikasi onKeluar={keluar} />} />
           {/* Punya alamat sendiri, bukan menumpang antrean: yang meracik minuman
-              dan yang menerima uang sering bukan orang yang sama, dan begitu KDS
-              ada, alamat inilah yang dipindahkan ke layar dapur. */}
-          <Route path="/dibuat" element={<LayarDibuat onKeluar={keluar} />} />
+              dan yang menerima uang sering bukan orang yang sama. Alamat ini
+              dulu bernama /dibuat dan dipakai kasir; ia TIDAK ditulis ulang saat
+              jadi layar dapur, cuma diganti nama dan dibesarkan hurufnya —
+              kebutuhannya memang sudah identik sejak awal.
+
+              Alamat lama sengaja tak diberi pengalihan: app ini belum dipakai di
+              luar dev, jadi belum ada yang mem-bookmark-nya, dan route "*" di
+              bawah sudah memulangkan alamat asing ke antrean. */}
+          <Route path="/dapur" element={<LayarDapur onKeluar={keluar} />} />
           {/* Tak dijaga di sini: penjaganya `role:owner` di Ordering, dan
               kasir yang memaksa alamat ini melihat form kosong dengan pesan
               403 — bukan setelan outlet. Menambahkan penjaga kedua di layar
