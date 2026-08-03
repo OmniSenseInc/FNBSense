@@ -10,6 +10,7 @@ use App\Messaging\EventTopology;
 use App\Messaging\OrderPaidConsumer;
 use App\Messaging\RabbitMqConnection;
 use Illuminate\Console\Command;
+use PhpAmqpLib\Exception\AMQPTimeoutException;
 use PhpAmqpLib\Message\AMQPMessage;
 use PhpAmqpLib\Wire\AMQPTable;
 
@@ -20,6 +21,9 @@ use PhpAmqpLib\Wire\AMQPTable;
  */
 class InventoryConsume extends Command
 {
+    /** Lama menunggu tiap putaran sebelum mengecek ulang. */
+    private const TUNGGU_DETIK = 5;
+
     protected $signature = 'inventory:consume';
 
     protected $description = 'Konsumsi event order.paid dari RabbitMQ dan potong stok sesuai resep Catalog.';
@@ -52,7 +56,15 @@ class InventoryConsume extends Command
         $this->info("inventory:consume mendengarkan queue '{$t['queue']}' (Ctrl+C untuk berhenti).");
 
         while ($channel->is_consuming()) {
-            $channel->wait();
+            try {
+                $channel->wait(null, false, self::TUNGGU_DETIK);
+            } catch (AMQPTimeoutException) {
+                // Antrean sepi adalah keadaan NORMAL. Tanpa tangkapan ini
+                // daemon mati sendiri begitu tak ada pembayaran selama
+                // beberapa detik — dan sejak itu stok berhenti terpotong tanpa
+                // satu pun tanda di layar mana pun.
+                continue;
+            }
         }
 
         $channel->close();

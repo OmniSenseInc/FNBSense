@@ -10,12 +10,16 @@ use App\Messaging\NotificationConsumer;
 use App\Messaging\RabbitMqConnection;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
+use PhpAmqpLib\Exception\AMQPTimeoutException;
 use PhpAmqpLib\Message\AMQPMessage;
 use PhpAmqpLib\Wire\AMQPTable;
 use Throwable;
 
 class NotificationConsume extends Command
 {
+    /** Lama menunggu tiap putaran sebelum mengecek ulang. */
+    private const TUNGGU_DETIK = 5;
+
     protected $signature = 'notification:consume';
 
     protected $description = 'Konsumsi alarm inventory.* dan bentuk notifikasi inbox.';
@@ -40,7 +44,16 @@ class NotificationConsume extends Command
         );
         $this->info("notification:consume mendengarkan queue '{$topology['queue']}'.");
         while ($channel->is_consuming()) {
-            $channel->wait();
+            try {
+                $channel->wait(null, false, self::TUNGGU_DETIK);
+            } catch (AMQPTimeoutException) {
+                // Antrean sepi adalah keadaan NORMAL, bukan kegagalan. Tanpa
+                // tangkapan ini daemon mati sendiri di kafe yang tak setiap
+                // detik membatalkan pesanan — dan matinya diam-diam, jadi
+                // notifikasi berikutnya cuma menumpuk di queue tanpa ada yang
+                // tahu. Jeda pendek dipakai supaya Ctrl+C tetap responsif.
+                continue;
+            }
         }
         $channel->close();
         $connection->close();
