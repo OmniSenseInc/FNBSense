@@ -31,6 +31,73 @@ class NotificationApiTest extends TestCase
         ], $overrides));
     }
 
+    /**
+     * Notifikasi ber-audiens owner tak pernah sampai ke kasir.
+     *
+     * Ditegakkan di server, bukan di layar: kalau barisnya tetap dikirim ke
+     * browser lalu disembunyikan tampilan, kasir yang dilaporkan tinggal
+     * membuka DevTools untuk membaca laporan tentang dirinya sendiri.
+     */
+    public function test_notifikasi_owner_tak_terlihat_kasir(): void
+    {
+        $tenant = (string) Str::uuid();
+        $outlet = (string) Str::uuid();
+
+        $this->seedNotif($tenant, $outlet);
+        $this->seedNotif($tenant, $outlet, [
+            'audience' => Notification::UNTUK_OWNER,
+            'type' => 'order_cancelled',
+            'title' => 'Pesanan dibatalkan',
+        ]);
+
+        $this->getJson('/api/notifications', $this->authHeaders($tenant, $outlet, 'cashier'))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.title', 'Stok menipis');
+
+        $this->getJson('/api/notifications', $this->authHeaders($tenant, $outlet, 'owner'))
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+    }
+
+    /**
+     * Angka lonceng ikut disaring.
+     *
+     * Kalau tidak, kasir melihat "1 belum dibaca" lalu membuka inbox kosong —
+     * dan sejak saat itu ia tahu ada sesuatu yang disembunyikan darinya.
+     */
+    public function test_angka_belum_dibaca_ikut_menyaring_audiens(): void
+    {
+        $tenant = (string) Str::uuid();
+        $outlet = (string) Str::uuid();
+
+        $this->seedNotif($tenant, $outlet);
+        $this->seedNotif($tenant, $outlet, ['audience' => Notification::UNTUK_OWNER]);
+
+        $this->getJson('/api/notifications/unread-count', $this->authHeaders($tenant, $outlet, 'cashier'))
+            ->assertOk()
+            ->assertJsonPath('unread', 1);
+
+        $this->getJson('/api/notifications/unread-count', $this->authHeaders($tenant, $outlet, 'owner'))
+            ->assertOk()
+            ->assertJsonPath('unread', 2);
+    }
+
+    /** Kasir tak bisa memastikan keberadaannya dengan menebak id -> 404. */
+    public function test_kasir_menandai_notifikasi_owner_dapat_404(): void
+    {
+        $tenant = (string) Str::uuid();
+        $outlet = (string) Str::uuid();
+
+        $notif = $this->seedNotif($tenant, $outlet, ['audience' => Notification::UNTUK_OWNER]);
+
+        $this->postJson(
+            "/api/notifications/{$notif->id}/read",
+            [],
+            $this->authHeaders($tenant, $outlet, 'cashier'),
+        )->assertStatus(404);
+    }
+
     public function test_guest_ditolak(): void
     {
         $this->getJson('/api/notifications')->assertStatus(401);

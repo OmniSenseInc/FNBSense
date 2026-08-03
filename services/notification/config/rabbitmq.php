@@ -18,6 +18,9 @@ return [
             'inventory.low_stock',
             'inventory.shortfall',
             'inventory.recipe_missing',
+            // Pembatalan pesanan oleh kasir -> inbox owner. Datang dari
+            // Ordering, bukan Inventory: queue ini bukan lagi khusus alarm stok.
+            'order.cancelled',
         ],
     ],
     'consume' => ['prefetch' => 10],

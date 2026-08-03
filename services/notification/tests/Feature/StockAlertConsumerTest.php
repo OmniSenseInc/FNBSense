@@ -32,6 +32,69 @@ class StockAlertConsumerTest extends TestCase
         return app(NotificationConsumer::class)->handle($envelope);
     }
 
+    /** Payload pembatalan yang sah, boleh ditimpa per test. */
+    private function batal(array $overrides = []): array
+    {
+        return $this->envelope('order.cancelled', array_merge([
+            'order_id' => 'ORD-9',
+            'order_number' => 'A-012',
+            'grand_total' => 81_200,
+            'reason' => 'Pelanggan pergi',
+            'cancelled_by' => (string) Str::uuid(),
+        ], $overrides));
+    }
+
+    /**
+     * Pembatalan hanya untuk owner, dan nominalnya ikut.
+     *
+     * Notifikasi ini melaporkan tindakan KASIR — orang yang dilaporkan tak
+     * boleh ikut membacanya. Dan tanpa nominal, owner tak bisa membedakan
+     * segelas kopi salah pesan dari rombongan dua juta yang batal.
+     */
+    public function test_pembatalan_jadi_notifikasi_owner_bernominal(): void
+    {
+        $this->assertSame(ConsumeOutcome::Ack, $this->consume($this->batal()));
+
+        $notif = Notification::firstOrFail();
+
+        $this->assertSame('order_cancelled', $notif->type);
+        $this->assertSame('warning', $notif->severity);
+        $this->assertSame(Notification::UNTUK_OWNER, $notif->audience);
+        $this->assertStringContainsString('A-012', $notif->body);
+        $this->assertStringContainsString('81.200', $notif->body);
+        $this->assertStringContainsString('Pelanggan pergi', $notif->body);
+    }
+
+    /** Kasir boleh membatalkan tanpa menulis alasan — bodynya harus tetap waras. */
+    public function test_pembatalan_tanpa_alasan_tetap_terbaca(): void
+    {
+        $this->assertSame(ConsumeOutcome::Ack, $this->consume($this->batal(['reason' => null])));
+
+        $this->assertStringContainsString('Tanpa alasan tertulis', Notification::firstOrFail()->body);
+    }
+
+    /**
+     * Nominal rusak dibuang ke DLQ, bukan dicetak apa adanya.
+     *
+     * Non-numerik meledak di number_format dan menjatuhkan daemon; negatif
+     * tercetak sebagai "Rp -81.200" di inbox owner. Dua-duanya lolos kalau yang
+     * diperiksa cuma keberadaan kuncinya.
+     */
+    public function test_nominal_rusak_ditolak(): void
+    {
+        $rusakSemua = [
+            ['grand_total' => 'delapan puluh ribu'],
+            ['grand_total' => -1],
+            ['grand_total' => null],
+        ];
+
+        foreach ($rusakSemua as $rusak) {
+            $this->assertSame(ConsumeOutcome::Dead, $this->consume($this->batal($rusak)));
+        }
+
+        $this->assertSame(0, Notification::count());
+    }
+
     public function test_low_stock_jadi_notifikasi_warning(): void
     {
         $env = $this->envelope('inventory.low_stock', [

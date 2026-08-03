@@ -26,6 +26,17 @@ class NotificationController extends Controller
             })
             ->where('n.tenant_id', $this->tenantId($request))
             ->where('n.outlet_id', $this->outletId($request))
+            // Penyaringan audiens ditegakkan DI SINI, bukan di layar. Notifikasi
+            // pembatalan melaporkan tindakan kasir kepada owner; kalau ia tetap
+            // dikirim ke browser lalu disembunyikan di tampilan, orang yang
+            // dilaporkan tinggal membuka DevTools untuk membacanya.
+            ->where(function ($q) use ($request) {
+                $q->where('n.audience', Notification::UNTUK_SEMUA);
+
+                if ($this->peran($request) === Notification::UNTUK_OWNER) {
+                    $q->orWhere('n.audience', Notification::UNTUK_OWNER);
+                }
+            })
             ->orderByDesc('n.created_at')
             ->limit(self::MAX_INBOX)
             ->get(['n.id', 'n.type', 'n.severity', 'n.title', 'n.body', 'n.payload', 'n.created_at', 'r.read_at']);
@@ -54,6 +65,10 @@ class NotificationController extends Controller
         $notification = Notification::query()
             ->where('tenant_id', $this->tenantId($request))
             ->where('outlet_id', $this->outletId($request))
+            // Ikut disaring: menjawab 404 untuk notifikasi yang tak boleh ia
+            // lihat, alih-alih 200, membuat kasir tak bisa memastikan
+            // keberadaannya dengan menebak id.
+            ->untukPeran($this->peran($request))
             ->find($id);
 
         if ($notification === null) {
@@ -97,7 +112,20 @@ class NotificationController extends Controller
         return Notification::query()
             ->where('tenant_id', $this->tenantId($request))
             ->where('outlet_id', $this->outletId($request))
+            // Angka lonceng harus menghitung persis apa yang akan terlihat saat
+            // daftarnya dibuka. Tanpa saringan yang sama, kasir melihat "1
+            // belum dibaca" lalu membuka inbox kosong — dan sejak itu ia tahu
+            // ada sesuatu yang disembunyikan darinya.
+            ->untukPeran($this->peran($request))
             ->whereDoesntHave('reads', fn ($q) => $q->where('user_id', $userId));
+    }
+
+    /** Peran dari klaim JWT, dipasang AuthenticateJwt. */
+    private function peran(Request $request): ?string
+    {
+        $peran = $request->attributes->get('role');
+
+        return is_string($peran) ? $peran : null;
     }
 
     private function userId(Request $request): string
