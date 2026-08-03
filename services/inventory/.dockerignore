@@ -1,0 +1,19 @@
+# Build context image ini = folder service ini (lihat infra/php/Dockerfile).
+#
+# vendor/ sengaja tak ikut: ia diinstal ulang di dalam image dengan --no-dev.
+# Menyalin vendor hasil `composer install` di Windows ke image Linux berarti
+# menjalankan hasil resolusi mesin lain, dan bedanya baru terlihat saat runtime.
+vendor/
+node_modules/
+
+# .env juga dihapus lagi di dalam Dockerfile — dua pagar untuk hal yang sama,
+# karena satu berkas terlewat di sini berarti kredensial dev ikut ke produksi.
+.env
+.env.*
+
+storage/logs/*.log
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+.phpunit.result.cache
+.git/

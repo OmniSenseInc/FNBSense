@@ -1,0 +1,472 @@
+# FNBSense — produksi (jalur kritis).
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# BERDIRI SENDIRI, bukan overlay di atas docker-compose.yml. Sempat dicoba
+# sebagai override, tapi `ports:` di compose bersifat MENAMBAH — port RabbitMQ,
+# Redis, dan dasbor Traefik yang terbuka ke dunia di berkas dev itu mustahil
+# ditutup dari sini. Satu-satunya cara menutupnya adalah tidak mewarisinya.
+#
+# Yang SENGAJA belum ada di sini (F6/F7 dan realtime): finance, reporting,
+# dashboard, realtime. Empat-empatnya sudah jadi dan berjalan, tapi kafe bisa
+# berjualan tanpa mereka — dan tiap container tambahan adalah satu lagi yang
+# harus benar sebelum pelanggan pertama bisa memesan.
+
+networks:
+  fnbsense:
+    name: fnbsense
+    driver: bridge
+
+volumes:
+  mysql-data:
+  rabbitmq-data:
+  redis-data:
+  letsencrypt:
+
+# ---------------------------------------------------------------------------
+# Potongan yang dipakai ulang
+# ---------------------------------------------------------------------------
+
+# Env yang sama untuk kelima service Laravel. Yang khas per service (nama
+# database, kunci app, kunci JWT) ditambahkan di masing-masing entri.
+x-laravel-env: &laravel-env
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_TIMEZONE: Asia/Jakarta
+  # stderr, bukan berkas: log yang menumpuk di dalam container ikut hilang saat
+  # container diganti, dan tak ada yang sempat membacanya. Lewat stderr ia
+  # terbaca dengan `docker compose logs`.
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: warning
+
+  # array, bukan database. TAK SATU PUN dari kelima service punya migrasi tabel
+  # `sessions` — sudah diperiksa — sementara default framework adalah
+  # `database`. Empat di antaranya masih punya routes/web.php sisa kerangka
+  # Laravel (`GET /` → view welcome) yang memakai grup middleware `web`, jadi
+  # StartSession menulis ke tabel yang tak ada. Yang pertama menabraknya adalah
+  # orang yang membuka akar domain untuk memastikan servernya hidup: ia
+  # disambut 500, dan pesannya menyebut sessions, bukan sesuatu yang berguna.
+  #
+  # Aman karena identitas di sini datang dari JWT per-permintaan, bukan cookie.
+  SESSION_DRIVER: array
+
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_USERNAME: fnbsense
+  DB_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD wajib diisi di .env.production}
+
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USER: ${RABBITMQ_USER:-fnbsense}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD wajib diisi di .env.production}
+  RABBITMQ_VHOST: /
+
+# Kunci JWT dipasang sebagai berkas read-only dari host, bukan dipanggang ke
+# dalam image: image bisa saja terdorong ke registry, dan private key yang ikut
+# di dalamnya tak bisa ditarik kembali.
+x-keys: &keys
+  - ./infra/keys:/keys:ro
+
+x-laravel-build: &laravel-build
+  dockerfile: ../../infra/php/Dockerfile
+
+x-depends: &depends
+  mysql:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+
+services:
+  # -------------------------------------------------------------------------
+  # Gerbang
+  # -------------------------------------------------------------------------
+  gateway:
+    image: traefik:v3.3
+    container_name: fnbsense-gateway
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=fnbsense"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Semua yang datang lewat http dilempar ke https. Bukan kenyamanan:
+      # token kasir dan seluruh isi pesanan lewat di sini, dan satu permintaan
+      # http saja sudah cukup untuk membocorkannya di Wi-Fi kafe.
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:?ACME_EMAIL wajib diisi}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      # Tantangan HTTP, bukan DNS: ia tak menuntut kredensial penyedia DNS.
+      # Syaratnya port 80 harus tetap terbuka ke internet — pengalihan di atas
+      # tak mengganggu, Traefik menangani jalur ACME sebelum mengalihkan.
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"
+      - "443:443"
+    # Dasbor Traefik TIDAK dinyalakan. Di berkas dev ia terbuka tanpa sandi di
+    # 8080, dan isinya adalah peta lengkap seluruh service beserta rutenya.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    networks: [fnbsense]
+
+  # -------------------------------------------------------------------------
+  # Infrastruktur — tak satu pun membuka port ke host.
+  #
+  # Di berkas dev ketiganya dipetakan ke host supaya bisa diintip dari Windows.
+  # Di sini tidak: mereka hanya perlu dijangkau container tetangga lewat
+  # jaringan `fnbsense`, dan port yang tak dipetakan tak bisa dipindai dari
+  # internet sekalipun firewall VPS lupa dipasang.
+  # -------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.4
+    container_name: fnbsense-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD wajib diisi}
+      # Dipaku 'fnbsense', tidak dari env: nama ini juga ditulis di dalam
+      # infra/mysql/init.sql (GRANT ... TO 'fnbsense'@'%'). Kalau ia boleh
+      # berbeda, GRANT-nya akan menunjuk user yang tak pernah dibuat, dan
+      # gagalnya baru terlihat sebagai "access denied" saat migrasi pertama.
+      MYSQL_USER: fnbsense
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./infra/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ufnbsense", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks: [fnbsense]
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: fnbsense-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fnbsense}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks: [fnbsense]
+
+  redis:
+    image: redis:7-alpine
+    container_name: fnbsense-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [fnbsense]
+
+  # -------------------------------------------------------------------------
+  # Service Laravel
+  #
+  # Rute Traefik-nya MENIRU PERSIS proxy di apps/*/vite.config.ts: awalan yang
+  # sama (/iam, /ordering, /catalog, /notification) dan pemotongan awalan yang
+  # sama. Karena itu kedua app frontend tidak berubah satu baris pun — bagi
+  # browser semuanya tetap satu origin, dan CORS tetap tak pernah ikut bermain.
+  #
+  # Aturan Host(...) && PathPrefix(...) lebih panjang daripada Host(...) milik
+  # app, dan Traefik memberi prioritas pada aturan yang lebih panjang. Jadi /iam
+  # sampai ke IAM, sisanya jatuh ke app.
+  # -------------------------------------------------------------------------
+  iam:
+    build:
+      <<: *laravel-build
+      context: ./services/iam
+    container_name: fnbsense-iam
+    restart: unless-stopped
+    environment:
+      <<: *laravel-env
+      APP_NAME: "FNBSense IAM"
+      APP_KEY: ${APP_KEY_IAM:?APP_KEY_IAM wajib diisi}
+      APP_URL: https://${DOMAIN_STAFF:?DOMAIN_STAFF wajib diisi}/iam
+      DB_DATABASE: fnbsense_iam
+      # SATU-SATUNYA container yang memegang private key. Ia yang menerbitkan
+      # token; empat service lain hanya memverifikasi, dan tak satu pun dari
+      # mereka boleh bisa memalsukan terbitan IAM.
+      JWT_ALGO: RS256
+      JWT_PRIVATE_KEY: file:///keys/jwt-private.pem
+      JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
+    volumes: *keys
+    depends_on: *depends
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.iam.loadbalancer.server.port=8080"
+      - "traefik.http.routers.iam.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/iam`)"
+      - "traefik.http.routers.iam.entrypoints=websecure"
+      - "traefik.http.routers.iam.tls.certresolver=le"
+      - "traefik.http.routers.iam.middlewares=iam-strip"
+      - "traefik.http.middlewares.iam-strip.stripprefix.prefixes=/iam"
+    networks: [fnbsense]
+
+  catalog:
+    build:
+      <<: *laravel-build
+      context: ./services/catalog
+    container_name: fnbsense-catalog
+    restart: unless-stopped
+    environment:
+      <<: *laravel-env
+      APP_NAME: "FNBSense Catalog"
+      APP_KEY: ${APP_KEY_CATALOG:?APP_KEY_CATALOG wajib diisi}
+      APP_URL: https://${DOMAIN_CUSTOMER:?DOMAIN_CUSTOMER wajib diisi}/catalog
+      DB_DATABASE: fnbsense_catalog
+      # Kedua slot diisi PUBLIC key. Paket jwt-auth menolak slot private yang
+      # kosong walau service ini cuma memverifikasi; kunci publik mengisinya
+      # tanpa memberi kemampuan menandatangani apa pun.
+      JWT_ALGO: RS256
+      JWT_PRIVATE_KEY: file:///keys/jwt-public.pem
+      JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
+      JWT_BLACKLIST_ENABLED: "false"
+      CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN:?CATALOG_SERVICE_TOKEN wajib diisi}
+    volumes: *keys
+    depends_on: *depends
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.catalog.loadbalancer.server.port=8080"
+      - "traefik.http.routers.catalog.rule=Host(`${DOMAIN_CUSTOMER}`) && PathPrefix(`/catalog`)"
+      - "traefik.http.routers.catalog.entrypoints=websecure"
+      - "traefik.http.routers.catalog.tls.certresolver=le"
+      - "traefik.http.routers.catalog.middlewares=catalog-strip"
+      - "traefik.http.middlewares.catalog-strip.stripprefix.prefixes=/catalog"
+    networks: [fnbsense]
+
+  ordering:
+    build:
+      <<: *laravel-build
+      context: ./services/ordering
+    container_name: fnbsense-ordering
+    restart: unless-stopped
+    environment: &ordering-env
+      <<: *laravel-env
+      APP_NAME: "FNBSense Ordering"
+      APP_KEY: ${APP_KEY_ORDERING:?APP_KEY_ORDERING wajib diisi}
+      APP_URL: https://${DOMAIN_CUSTOMER}/ordering
+      DB_DATABASE: fnbsense_ordering
+      SESSION_DRIVER: array
+      JWT_ALGO: RS256
+      JWT_PRIVATE_KEY: file:///keys/jwt-public.pem
+      JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
+      JWT_BLACKLIST_ENABLED: "false"
+      # Nama container, bukan lewat gerbang: panggilan ini tak pernah keluar
+      # dari jaringan Docker, jadi tak ada gunanya memutarinya lewat internet
+      # dan TLS. Port 8080 karena itu yang didengarkan FrankenPHP di dalam.
+      CATALOG_BASE_URL: http://catalog:8080
+      CATALOG_TIMEOUT: "3"
+      CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN}
+      PROMOTIONS_ENABLED: "true"
+    volumes: *keys
+    depends_on: *depends
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.ordering.loadbalancer.server.port=8080"
+      # DUA router untuk satu service: pelanggan memesan dari domainnya, kasir
+      # mengonfirmasi dari domainnya. Service yang dituju sama, jadi memisahnya
+      # jadi dua container hanya akan menggandakan hal yang sama.
+      - "traefik.http.routers.ordering-pelanggan.rule=Host(`${DOMAIN_CUSTOMER}`) && PathPrefix(`/ordering`)"
+      - "traefik.http.routers.ordering-pelanggan.entrypoints=websecure"
+      - "traefik.http.routers.ordering-pelanggan.tls.certresolver=le"
+      - "traefik.http.routers.ordering-pelanggan.middlewares=ordering-strip"
+      - "traefik.http.routers.ordering-kasir.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/ordering`)"
+      - "traefik.http.routers.ordering-kasir.entrypoints=websecure"
+      - "traefik.http.routers.ordering-kasir.tls.certresolver=le"
+      - "traefik.http.routers.ordering-kasir.middlewares=ordering-strip"
+      - "traefik.http.middlewares.ordering-strip.stripprefix.prefixes=/ordering"
+    networks: [fnbsense]
+
+  inventory:
+    build:
+      <<: *laravel-build
+      context: ./services/inventory
+    container_name: fnbsense-inventory
+    restart: unless-stopped
+    environment: &inventory-env
+      <<: *laravel-env
+      APP_NAME: "FNBSense Inventory"
+      APP_KEY: ${APP_KEY_INVENTORY:?APP_KEY_INVENTORY wajib diisi}
+      APP_URL: https://${DOMAIN_STAFF}
+      DB_DATABASE: fnbsense_inventory
+      SESSION_DRIVER: array
+      JWT_ALGO: RS256
+      JWT_PRIVATE_KEY: file:///keys/jwt-public.pem
+      JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
+      JWT_BLACKLIST_ENABLED: "false"
+      CATALOG_BASE_URL: http://catalog:8080
+      CATALOG_TIMEOUT: "3"
+      CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN}
+    volumes: *keys
+    depends_on: *depends
+    # Tanpa label Traefik: layar stok belum tersambung ke app kasir, jadi tak
+    # ada yang memanggil HTTP-nya. Yang bekerja sekarang cuma consumer-nya di
+    # bawah. Rutenya ditambahkan saat layar itu dibuat, bukan sebelumnya.
+    networks: [fnbsense]
+
+  notification:
+    build:
+      <<: *laravel-build
+      context: ./services/notification
+    container_name: fnbsense-notification
+    restart: unless-stopped
+    environment: &notification-env
+      <<: *laravel-env
+      APP_NAME: "FNBSense Notification"
+      APP_KEY: ${APP_KEY_NOTIFICATION:?APP_KEY_NOTIFICATION wajib diisi}
+      APP_URL: https://${DOMAIN_STAFF}/notification
+      # Ditulis eksplisit, dan ini BUKAN sekadar kerapian: default di
+      # services/notification/config/database.php masih 'fnbsense_reporting'
+      # — sisa salin-tempel dari service reporting. Kalau baris ini hilang,
+      # inbox notifikasi diam-diam menulis ke database laporan keuangan.
+      DB_DATABASE: fnbsense_notification
+      # file, bukan database seperti empat service lain: notification adalah
+      # SATU-SATUNYA yang tak punya migrasi tabel `cache`, sementara default
+      # framework menunjuk ke sana. Hari ini tak ada kode di dalamnya yang
+      # menyentuh cache — jadi salahnya tak terlihat sampai seseorang menambah
+      # satu `throttle:` di routes, dan gagalnya muncul sebagai tabel hilang.
+      CACHE_STORE: file
+      # Service ini punya verifikator JWT-nya sendiri (bukan paket jwt-auth),
+      # dan ia hanya membaca satu variabel: JWT_PUBLIC_KEY.
+      JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
+      JWT_LEEWAY_SECONDS: "30"
+    volumes: *keys
+    depends_on: *depends
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.notification.loadbalancer.server.port=8080"
+      - "traefik.http.routers.notification.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/notification`)"
+      - "traefik.http.routers.notification.entrypoints=websecure"
+      - "traefik.http.routers.notification.tls.certresolver=le"
+      - "traefik.http.routers.notification.middlewares=notification-strip"
+      - "traefik.http.middlewares.notification-strip.stripprefix.prefixes=/notification"
+    networks: [fnbsense]
+
+  # -------------------------------------------------------------------------
+  # Daemon — image yang sama, perintah yang berbeda.
+  #
+  # Empat proses yang di pengembangan dijalankan tangan lewat dev.ps1. Yang
+  # paling mudah dilupakan justru `schedule:work`: tanpa ia, `orders:expire`
+  # tak pernah jalan, pesanan menumpuk sebagai PENDING selamanya, dan hitung
+  # mundur di kartu kasir menghitung ke tenggat yang tak pernah tiba.
+  #
+  # Tak satu pun punya label Traefik: mereka tidak mendengarkan HTTP.
+  # -------------------------------------------------------------------------
+  ordering-relay:
+    build:
+      <<: *laravel-build
+      context: ./services/ordering
+    container_name: fnbsense-ordering-relay
+    restart: unless-stopped
+    command: ["php", "artisan", "outbox:relay"]
+    environment: *ordering-env
+    volumes: *keys
+    depends_on: *depends
+    networks: [fnbsense]
+
+  ordering-schedule:
+    build:
+      <<: *laravel-build
+      context: ./services/ordering
+    container_name: fnbsense-ordering-schedule
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    environment: *ordering-env
+    volumes: *keys
+    depends_on: *depends
+    networks: [fnbsense]
+
+  inventory-consume:
+    build:
+      <<: *laravel-build
+      context: ./services/inventory
+    container_name: fnbsense-inventory-consume
+    restart: unless-stopped
+    command: ["php", "artisan", "inventory:consume"]
+    environment: *inventory-env
+    volumes: *keys
+    depends_on: *depends
+    networks: [fnbsense]
+
+  notification-consume:
+    build:
+      <<: *laravel-build
+      context: ./services/notification
+    container_name: fnbsense-notification-consume
+    restart: unless-stopped
+    command: ["php", "artisan", "notification:consume"]
+    environment: *notification-env
+    volumes: *keys
+    depends_on: *depends
+    networks: [fnbsense]
+
+  # -------------------------------------------------------------------------
+  # App frontend — berkas statis di belakang nginx.
+  #
+  # VITE_* di bawah masuk saat BUILD, bukan saat menyala (lihat catatan di
+  # infra/web/Dockerfile). Mengubahnya menuntut `up -d --build`, bukan restart.
+  # -------------------------------------------------------------------------
+  app-customer:
+    build:
+      context: ./apps/customer
+      dockerfile: ../../infra/web/Dockerfile
+      args:
+        VITE_ORDERING_URL: /ordering
+        VITE_CATALOG_URL: /catalog
+        VITE_NAMA_KAFE: ${NAMA_KAFE:-Kafe}
+    container_name: fnbsense-app-customer
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.app-customer.loadbalancer.server.port=80"
+      - "traefik.http.routers.app-customer.rule=Host(`${DOMAIN_CUSTOMER}`)"
+      - "traefik.http.routers.app-customer.entrypoints=websecure"
+      - "traefik.http.routers.app-customer.tls.certresolver=le"
+    networks: [fnbsense]
+
+  app-staff:
+    build:
+      context: ./apps/staff
+      dockerfile: ../../infra/web/Dockerfile
+      args:
+        VITE_IAM_URL: /iam
+        VITE_ORDERING_URL: /ordering
+        VITE_NOTIFICATION_URL: /notification
+        # URL PENUH, satu-satunya di sini — nilainya berakhir di dalam QR yang
+        # dicetak dan ditempel di meja, dan yang memindainya adalah HP orang
+        # lain. Alamat relatif di sini menghasilkan QR yang menunjuk ke domain
+        # kasir, dan pelanggan mendarat di halaman login.
+        VITE_CUSTOMER_URL: https://${DOMAIN_CUSTOMER}
+        VITE_NAMA_KAFE: ${NAMA_KAFE:-Kafe}
+    container_name: fnbsense-app-staff
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.app-staff.loadbalancer.server.port=80"
+      - "traefik.http.routers.app-staff.rule=Host(`${DOMAIN_STAFF}`)"
+      - "traefik.http.routers.app-staff.entrypoints=websecure"
+      - "traefik.http.routers.app-staff.tls.certresolver=le"
+    networks: [fnbsense]

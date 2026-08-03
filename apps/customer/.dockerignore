@@ -1,0 +1,14 @@
+# Build context image ini = folder app ini (lihat infra/web/Dockerfile).
+#
+# node_modules/ diinstal ulang di dalam image lewat `npm ci`. Menyalin hasil
+# instalasi Windows ke image Linux berarti membawa binary platform yang salah.
+node_modules/
+dist/
+
+# .env.local memuat nilai untuk mencoba dari HP di Wi-Fi rumah (alamat IP
+# laptop). Kalau ia ikut ke image, `npm run build` di dalam container akan
+# membekukan alamat itu ke dalam bundle — dan produksi menunjuk ke laptop.
+.env
+.env.*
+
+.git/

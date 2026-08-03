@@ -7,6 +7,16 @@ vendor/
 .env.*.local
 *.env.local
 
+# Kredensial produksi. Pola `.env` di atas TIDAK mencakupnya — ia cuma cocok
+# untuk nama yang persis ".env", dan `.env.*.local` menuntut akhiran .local.
+# Tanpa baris ini, sandi MySQL dan RabbitMQ produksi ikut ter-commit.
+.env.production
+
+# Kunci JWT produksi. Private key di sini yang menerbitkan SELURUH token; siapa
+# pun yang memegangnya bisa membuat dirinya owner di kafe mana pun.
+infra/keys/*
+!infra/keys/.gitkeep
+
 # Laravel
 /services/*/storage/*.key
 /services/*/storage/logs/*
