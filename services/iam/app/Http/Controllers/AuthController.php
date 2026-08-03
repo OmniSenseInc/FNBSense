@@ -145,21 +145,34 @@ class AuthController extends Controller
         // Tak boleh panggil user() lebih dulu — itu menuntut token belum expired,
         // sehingga window refresh tak pernah terpakai. Token di luar window -> 401.
         try {
-            $token = $this->guard()->refresh();
+            $sementara = $this->guard()->refresh();
         } catch (JWTException) {
             return response()->json(['message' => 'Token tidak bisa diperbarui.'], 401);
         }
 
-        // Cek konteks SETELAH refresh: user/tenant yang dinonaktifkan tetap ditolak,
-        // dan token baru langsung di-logout (blacklist) agar tak bisa dipakai.
-        $user = $this->guard()->setToken($token)->user();
+        // Token dari refresh() SENGAJA tidak dikembalikan ke pemanggil: klaimnya
+        // diturunkan dari token lama, bukan dibaca ulang dari DB. Ia dipakai di
+        // sini hanya sebagai bukti bahwa pemegangnya berhak — refresh() yang
+        // menegakkan refresh_ttl dan mem-blacklist token lama.
+        $sub = $this->guard()->setToken($sementara)->payload()->get('sub');
+
+        // Dimuat ULANG dari DB, bukan lewat $guard->user(): guard menyimpan
+        // instance User yang diresolusi dari token lama, dan getJWTCustomClaims()
+        // membaca dari instance itu. Staff yang baru diturunkan haknya akan
+        // membawa peran lamanya kalau kita memakai objek yang sudah dipegang guard.
+        $user = User::find($sub);
         if (! $user instanceof User || ! $this->hasActiveBusinessContext($user)) {
             $this->guard()->logout();
 
             return response()->json(['message' => 'Konteks akun tidak aktif atau tidak valid.'], 403);
         }
 
-        return $this->respondWithToken($token, $user);
+        // Buang token perantara supaya tak ada dua token hidup untuk satu refresh,
+        // lalu terbitkan dari USER — di jalur inilah getJWTCustomClaims() dibaca
+        // ulang, sehingga peran di token selalu mengikuti DB terkini.
+        $this->guard()->logout();
+
+        return $this->respondWithToken($this->guard()->login($user), $user);
     }
 
     /**

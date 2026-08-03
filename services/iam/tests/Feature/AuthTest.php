@@ -251,12 +251,6 @@ class AuthTest extends TestCase
      */
     public function test_refresh_menyegarkan_klaim_dari_database(): void
     {
-        $this->markTestSkipped(
-            'Perilaku BELUM diperbaiki - lihat SECURITY_TODO "Klaim basi setelah refresh". '
-            .'Test ini sudah terbukti bergigi (merah terhadap perilaku sekarang), '
-            .'disimpan sebagai bukti reproduksi, bukan dihapus.'
-        );
-
         $daftar = $this->postJson('/api/auth/register', $this->registerPayload())
             ->assertCreated()
             ->json();
