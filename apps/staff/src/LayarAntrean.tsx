@@ -5,6 +5,7 @@ import {
   ambilAntrean,
   ambilSetelan,
   batalkanPesanan,
+  hitungBelumDibaca,
   konfirmasiBayar,
   logout,
   peranSaya,
@@ -25,6 +26,9 @@ import { jam, labelMeja, rupiah, sisaMenit } from './format'
  * akan berdetak di antara dua polling tanpa membawa kabar baru.
  */
 const JEDA_MS = 5000
+
+/** Jeda lonceng. Peringatan stok tidak berubah per detik. */
+const JEDA_LONCENG_MS = 30_000
 
 /**
  * Di bawah ini sisa waktu berhenti jadi keterangan dan mulai jadi peringatan.
@@ -66,6 +70,8 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
   /** Outlet ini belum punya QRIS — cuma diperiksa untuk owner. */
   const [tanpaQris, setTanpaQris] = useState(false)
 
+  const [belumDibaca, setBelumDibaca] = useState(0)
+
   // Lewat ref supaya identitas fungsi dari App tak pernah memicu effect
   // menyalakan polling kedua yang berjalan berdampingan.
   const keluarRef = useRef(onKeluar)
@@ -103,6 +109,40 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
       window.clearTimeout(timer)
     }
   }, [versi])
+
+  /**
+   * Angka di lonceng.
+   *
+   * 30 detik, bukan 5 detik seperti antrean: peringatan stok tidak berubah per
+   * detik, dan menyamakannya berarti ratusan permintaan tambahan tiap jam
+   * untuk angka yang hampir selalu sama.
+   *
+   * Kegagalannya sengaja ditelan tanpa pesan. Notification adalah service
+   * KETIGA yang harus hidup; kalau ia mati, kasir tetap harus bisa menerima
+   * pembayaran. Layar antrean tak boleh menampilkan galat merah untuk sesuatu
+   * yang tak menghalangi pekerjaannya sama sekali.
+   */
+  useEffect(() => {
+    let batal = false
+    let timer = 0
+
+    async function hitung() {
+      try {
+        const jumlah = await hitungBelumDibaca()
+        if (!batal) setBelumDibaca(jumlah)
+      } catch {
+        // Diam. Lihat alasan di atas.
+      }
+      if (!batal) timer = window.setTimeout(hitung, JEDA_LONCENG_MS)
+    }
+
+    hitung()
+
+    return () => {
+      batal = true
+      window.clearTimeout(timer)
+    }
+  }, [])
 
   /**
    * Satu pertanyaan sekali buka, khusus owner: sudah ada QRIS atau belum.
@@ -219,6 +259,24 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
               tak ada baris mana pun yang bisa menuntun ke sana. */}
           {/* Pesanan yang lunas hilang dari antrean, jadi tanpa dua tautan ini
               tak ada baris mana pun yang bisa menuntun ke sana. */}
+          {/* Lonceng. Angkanya lencana, bukan tulisan: kasir harus bisa
+              menangkapnya dari sudut mata sambil melayani orang. */}
+          <Link
+            to="/notifikasi"
+            aria-label={
+              belumDibaca > 0 ? `Pemberitahuan, ${belumDibaca} belum dibaca` : 'Pemberitahuan'
+            }
+            className="relative rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
+            🔔
+            {belumDibaca > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-xs font-semibold text-white tabular-nums">
+                {/* Dibatasi 9+: tiga digit merusak lebar tombol, dan angka
+                    persisnya toh tak mengubah apa pun yang dilakukan kasir. */}
+                {belumDibaca > 9 ? '9+' : belumDibaca}
+              </span>
+            )}
+          </Link>
           <Link to="/dibuat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
             Sedang dibuat
           </Link>

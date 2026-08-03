@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { labelMeja, sisaMenit } from './format'
+import { labelMeja, sisaMenit, tanggalJam } from './format'
+
+describe('tanggalJam', () => {
+  it('membawa tanggalnya, bukan cuma jam', () => {
+    // Inbox pemberitahuan menyimpan 100 terakhir dan bisa membentang seminggu.
+    // Tanpa tanggal, peringatan stok tiga hari lalu terbaca sebagai kejadian
+    // siang tadi. Yang diperiksa keberadaan tanggalnya, bukan ejaan bulannya —
+    // ejaan itu milik ICU dan berubah antar-versi Node.
+    const hasil = tanggalJam('2026-08-02T14:05:00+07:00')
+
+    expect(hasil).toMatch(/\b2\b/)
+    expect(hasil).toMatch(/14[.:]05/)
+  })
+
+  it('tanggal tak terbaca jadi strip, bukan "Invalid Date"', () => {
+    expect(tanggalJam(null)).toBe('—')
+    expect(tanggalJam('bukan tanggal')).toBe('—')
+  })
+})
 
 describe('labelMeja', () => {
   it('memakai nama meja yang ditulis owner apa adanya', () => {

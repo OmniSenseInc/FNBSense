@@ -14,6 +14,7 @@
 // PERINGATAN: nilai VITE_* ikut terbungkus ke bundle. Hanya nilai publik.
 const IAM = import.meta.env.VITE_IAM_URL
 const ORDERING = import.meta.env.VITE_ORDERING_URL
+const NOTIFICATION = import.meta.env.VITE_NOTIFICATION_URL
 
 /**
  * Token disimpan di localStorage, bukan memori, supaya kasir yang tak sengaja
@@ -144,18 +145,27 @@ async function mintaTokenBaru(token: string): Promise<string | null> {
 }
 
 /**
- * Permintaan ber-token ke Ordering, dengan satu kali penukaran token saat 401.
+ * Permintaan ber-token, dengan satu kali penukaran token saat 401.
  *
  * Dibungkus di satu tempat justru supaya tak ada pemanggil yang lupa: setiap
  * endpoint kasir bisa kena 401 kapan saja, dan yang lupa menanganinya akan
  * terlihat sebagai "layar tiba-tiba kosong" di tengah jam sibuk.
+ *
+ * `basis` ada karena kasir kini bicara ke DUA service ber-token: Ordering dan
+ * Notification. Sengaja parameter, bukan fungsi kedua — fungsi kedua berarti
+ * menyalin logika tukar-token, dan salinan yang tertinggal versi adalah cara
+ * paling rapi kehilangan sesi kasir di satu layar saja.
  */
-async function panggil<T>(jalur: string, init?: RequestInit): Promise<T> {
+async function mintaJson(
+  jalur: string,
+  init: RequestInit | undefined,
+  basis: string,
+): Promise<Record<string, unknown>> {
   const token = bacaToken()
   if (!token) throw new Error(SESI_HABIS)
 
   const kirim = (t: string) =>
-    fetch(`${ORDERING}${jalur}`, {
+    fetch(`${basis}${jalur}`, {
       ...init,
       headers: {
         ...init?.headers,
@@ -201,8 +211,15 @@ async function panggil<T>(jalur: string, init?: RequestInit): Promise<T> {
   if (res.status === 404) throw new Error('Pesanan tidak ditemukan di outlet ini.')
   if (!res.ok) throw new Error('Gagal menghubungi server. Coba lagi.')
 
-  const json = await jsonDari(res)
-  return json.data as T
+  return await jsonDari(res)
+}
+
+/**
+ * Sebagian besar endpoint membungkus isinya di `data`. Yang tidak — misal
+ * `unread-count` yang membalas `{unread: N}` — memakai mintaJson() langsung.
+ */
+async function panggil<T>(jalur: string, init?: RequestInit, basis: string = ORDERING): Promise<T> {
+  return (await mintaJson(jalur, init, basis)).data as T
 }
 
 /**
@@ -691,6 +708,63 @@ export async function unggahQris(berkas: File): Promise<Setelan> {
  * tautan itu soal tidak menawarkan pintu yang pasti terkunci, bukan soal
  * mengunci pintunya.
  */
+/**
+ * Satu peringatan di inbox kasir. Sumbernya event stok dari Inventory.
+ *
+ * `tingkat` dibiarkan string bebas, bukan union tertutup: nilainya lahir di
+ * service lain, dan nilai baru di sana tak boleh membuat seluruh inbox gagal
+ * dipetakan. Yang belum dikenal jatuh ke tampilan netral.
+ */
+export type Notifikasi = {
+  id: string
+  jenis: string
+  tingkat: string
+  judul: string
+  isi: string
+  waktu: string | null
+  sudahDibaca: boolean
+}
+
+export function petakanNotifikasi(m: Record<string, unknown>): Notifikasi {
+  return {
+    id: String(m.id ?? ''),
+    jenis: typeof m.type === 'string' ? m.type : '',
+    tingkat: typeof m.severity === 'string' ? m.severity : 'info',
+    // Judul kosong lebih baik daripada "undefined" di layar kasir.
+    judul: typeof m.title === 'string' ? m.title : '',
+    isi: typeof m.body === 'string' ? m.body : '',
+    waktu: typeof m.created_at === 'string' ? m.created_at : null,
+    // Sengaja `=== true`, bukan truthy: apa pun selain "sudah dibaca" yang
+    // tegas harus jatuh ke BELUM dibaca. Peringatan stok yang diam-diam
+    // dianggap terbaca adalah peringatan yang tak pernah sampai.
+    sudahDibaca: m.read === true,
+  }
+}
+
+export async function ambilNotifikasi(): Promise<Notifikasi[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/notifications', undefined, NOTIFICATION)
+
+  return (Array.isArray(data) ? data : []).map(petakanNotifikasi)
+}
+
+/**
+ * Angka di lonceng.
+ *
+ * Jawabannya `{unread: N}` tanpa bungkus `data`, jadi lewat mintaJson().
+ * Nilai tak terbaca jadi 0 — lonceng yang menampilkan NaN lebih membingungkan
+ * daripada lonceng yang diam, dan daftarnya sendiri tetap bisa dibuka.
+ */
+export async function hitungBelumDibaca(): Promise<number> {
+  const json = await mintaJson('/api/notifications/unread-count', undefined, NOTIFICATION)
+  const jumlah = Number(json.unread)
+
+  return Number.isFinite(jumlah) && jumlah >= 0 ? jumlah : 0
+}
+
+export async function tandaiSemuaDibaca(): Promise<void> {
+  await panggil('/api/notifications/read-all', { method: 'POST' }, NOTIFICATION)
+}
+
 export function peranSaya(): string | null {
   const bagian = bacaToken()?.split('.')[1]
   if (!bagian) return null

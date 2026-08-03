@@ -6,7 +6,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { ambilAntrean, ambilSetelan, peranSaya } from './api'
+import { ambilAntrean, ambilSetelan, hitungBelumDibaca, peranSaya } from './api'
 import LayarAntrean from './LayarAntrean'
 
 // Seluruh modul api diganti: layar ini tak boleh menyentuh jaringan, dan yang
@@ -22,6 +22,7 @@ vi.mock('./api', () => ({
   // jadi undefined dan komponennya gagal dirender — persis yang terjadi saat
   // peranSaya() ditambahkan.
   peranSaya: vi.fn(),
+  hitungBelumDibaca: vi.fn(),
   SESI_HABIS: 'SESI_HABIS',
 }))
 
@@ -82,6 +83,7 @@ beforeEach(() => {
   // sudah dipasang. Tanpa baris ini, satu test yang menyetel peran 'owner'
   // membuat test sesudahnya ikut melihat tautan Setelan tanpa memintanya.
   ;(peranSaya as Mock).mockReturnValue(null)
+  ;(hitungBelumDibaca as Mock).mockResolvedValue(0)
   // Outlet yang sudah punya QRIS = keadaan normal. Test yang peduli soal
   // spanduknya menyetel sendiri.
   ;(ambilSetelan as Mock).mockResolvedValue({ qrisUrl: '/storage/qris/abc.png' })

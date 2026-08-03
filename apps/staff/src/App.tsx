@@ -6,6 +6,7 @@ import LayarDibuat from './LayarDibuat'
 import LayarLogin from './LayarLogin'
 import LayarMeja from './LayarMeja'
 import LayarNota from './LayarNota'
+import LayarNotifikasi from './LayarNotifikasi'
 import LayarRiwayat from './LayarRiwayat'
 import LayarSetelan from './LayarSetelan'
 
@@ -40,6 +41,10 @@ export default function App() {
               tunggal. Alamat harus menunjuk satu pesanan, bukan sekumpulan
               yang kebetulan bernomor sama. */}
           <Route path="/riwayat" element={<LayarRiwayat onKeluar={keluar} />} />
+          {/* Inbox peringatan stok. Rute sendiri, bukan panel di antrean:
+              semua tujuan lain di app ini pun rute, dan di HP daftar selebar
+              penuh lebih terbaca daripada kotak yang menggantung. */}
+          <Route path="/notifikasi" element={<LayarNotifikasi onKeluar={keluar} />} />
           {/* Punya alamat sendiri, bukan menumpang antrean: yang meracik minuman
               dan yang menerima uang sering bukan orang yang sama, dan begitu KDS
               ada, alamat inilah yang dipindahkan ke layar dapur. */}

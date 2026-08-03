@@ -31,6 +31,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (jalur) => jalur.replace(/^\/ordering/, ''),
       },
+      // Inbox peringatan stok (F8a). Service ketiga yang disentuh kasir.
+      '/notification': {
+        target: 'http://127.0.0.1:8007',
+        changeOrigin: true,
+        rewrite: (jalur) => jalur.replace(/^\/notification/, ''),
+      },
     },
   },
 })

@@ -68,3 +68,23 @@ export function jam(iso: string | null): string {
     minute: '2-digit',
   }).format(waktu)
 }
+
+/**
+ * Tanggal DAN jam, mis. "2 Agu 14.05".
+ *
+ * Untuk daftar yang bisa memuat beberapa hari sekaligus — inbox pemberitahuan
+ * menyimpan 100 terakhir, dan di kafe yang sepi itu bisa membentang seminggu.
+ * jam() saja akan menampilkan peringatan stok tiga hari lalu sebagai "14.05",
+ * yang dibaca kasir sebagai kejadian siang tadi.
+ */
+export function tanggalJam(iso: string | null): string {
+  if (!iso) return '—'
+  const waktu = new Date(iso)
+  if (Number.isNaN(waktu.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(waktu)
+}
