@@ -98,7 +98,13 @@ class NotificationController extends Controller
             ])->all();
 
         if ($rows !== []) {
-            NotificationRead::insert($rows);
+            // insertOrIgnore, bukan insert: daftar belum-dibaca dibaca lebih
+            // dulu, barisnya ditulis sesudah. Kasir yang membuka inbox di HP
+            // dan tablet sekaligus membuat dua permintaan sama-sama membawa
+            // daftar yang sama, dan yang kedua menabrak unique(notification_id,
+            // user_id) — ditandai-baca dua kali seharusnya tak berarti apa-apa,
+            // bukan berarti layar galat.
+            NotificationRead::insertOrIgnore($rows);
         }
 
         return response()->json(['data' => ['marked' => count($rows)]]);
