@@ -38,6 +38,32 @@ class StockTest extends TestCase
         ]);
     }
 
+    /**
+     * Pagar kebocoran: daftar kunci balasan dikunci, bukan sekadar dicek ada.
+     *
+     * Endpoint ini terbuka untuk kasir. Tanpa penguncian ini, kolom apa pun
+     * yang ditambahkan ke `stock_balances` nanti — harga beli, pemasok — ikut
+     * terkirim ke layar kasir hanya karena ia ada di tabel, dan tak ada satu
+     * tes pun yang berubah merah untuk memberitahu kita.
+     */
+    public function test_daftar_stok_hanya_mengirim_medan_yang_diizinkan(): void
+    {
+        [$tenant, $outlet, $bahan] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+        $headers = $this->authHeaders($tenant, $outlet);
+
+        $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
+
+        $res = $this->withHeaders($headers)->getJson('/api/stock');
+
+        $res->assertOk();
+        $baris = $res->json('data.0');
+        $this->assertSame(
+            ['ingredient_id', 'qty_on_hand', 'min_stock', 'updated_at'],
+            array_keys($baris),
+        );
+        $this->assertSame($bahan, $baris['ingredient_id']);
+    }
+
     /** Restock kedua akumulatif; saldo == jumlah seluruh movement (invarian ledger). */
     public function test_restock_kedua_akumulatif_dan_saldo_sama_dengan_jumlah_ledger(): void
     {

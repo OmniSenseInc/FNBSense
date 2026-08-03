@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
- * CRUD saldo stok owner-only (restock + opname manual).
+ * Saldo stok: dibaca kasir & owner, DIUBAH owner saja (restock + opname manual).
  *
  * Invarian: qty_on_hand SELALU hasil dari ledger stock_movements, tak pernah
  * ditulis bebas. Tiap perubahan saldo dibarengi 1 baris movement, atomik dalam
@@ -20,6 +20,17 @@ use Illuminate\Support\Facades\DB;
  */
 class StockController extends Controller
 {
+    /**
+     * Daftar saldo stok outlet ini.
+     *
+     * Balasannya daftar-izin, bukan model mentah. Endpoint ini dibaca KASIR
+     * juga, dan model mentah menerbitkan setiap kolom yang kelak ditambahkan
+     * ke tabel: begitu harga beli bahan masuk ke `stock_balances`, angka itu
+     * sampai ke layar kasir tanpa satu baris kode pun berubah dan tanpa satu
+     * tes pun jadi merah. `tenant_id`/`outlet_id` sengaja tak dikirim — kedua
+     * nilai itu berasal dari token si peminta, jadi mengembalikannya cuma
+     * memberi tahu dia apa yang sudah dia bawa.
+     */
     public function index(Request $request): JsonResponse
     {
         $balances = StockBalance::query()
@@ -28,7 +39,12 @@ class StockController extends Controller
             ->orderBy('ingredient_id')
             ->get();
 
-        return response()->json(['data' => $balances]);
+        return response()->json(['data' => $balances->map(fn (StockBalance $saldo) => [
+            'ingredient_id' => $saldo->ingredient_id,
+            'qty_on_hand' => $saldo->qty_on_hand,
+            'min_stock' => $saldo->min_stock,
+            'updated_at' => $saldo->updated_at,
+        ])->all()]);
     }
 
     /**
