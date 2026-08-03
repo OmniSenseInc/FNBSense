@@ -1,0 +1,33 @@
+# Akhiran baris.
+#
+# `core.autocrlf=true` di mesin Windows mengubah LF jadi CRLF saat checkout.
+# Untuk kode PHP dan TypeScript itu tak jadi soal — tak ada yang membacanya
+# per-karakter. Untuk berkas di bawah, iya.
+#
+# Yang paling tajam: heredoc di infra/web/Dockerfile.
+#
+#     RUN cat > /etc/nginx/conf.d/default.conf <<'EOF'
+#     ...
+#     EOF
+#
+# Heredoc berhenti pada baris yang PERSIS berbunyi `EOF`. Dengan CRLF, baris
+# itu berbunyi `EOF\r` — dan build gagal dengan "unexpected end of file", yang
+# tak menyebut akhiran baris sama sekali.
+#
+# Di VPS Linux ini tak pernah terjadi (repo menyimpan LF, dan Linux
+# meng-checkout apa adanya), jadi produksi sudah aman tanpa berkas ini. Yang
+# dijaga di sini adalah build percobaan dari Windows — tempat kita justru
+# menguji semuanya untuk PERTAMA kali.
+#
+# Sengaja TIDAK ada `* text=auto`: aturan itu menormalisasi ulang seluruh repo
+# dan menghasilkan diff besar yang tak ada hubungannya dengan apa pun yang
+# sedang dikerjakan.
+
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+*.sh            text eol=lf
+*.sql           text eol=lf
+
+# Compose dan konfigurasi CI dibaca juga oleh alat di dalam container.
+*.yml           text eol=lf
+*.yaml          text eol=lf
