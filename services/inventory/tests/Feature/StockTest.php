@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Tests\Concerns\MintsToken;
@@ -12,6 +13,26 @@ class StockTest extends TestCase
 {
     use MintsToken;
     use RefreshDatabase;
+
+    /**
+     * Catalog palsu untuk GET /api/stock, yang kini menanyakan nama bahan.
+     *
+     * Dipanggil EKSPLISIT di tiap test yang menyentuh endpoint itu, bukan
+     * sekali di setUp(). Versi setUp sempat ditulis dan menipu: Laravel memakai
+     * stub PERTAMA yang cocok, jadi fake di setUp menang atas fake yang
+     * dipasang di dalam test — dua test hijau sambil membaca balasan kosong
+     * yang bukan balasan yang mereka maksud. Hijau karena alasan yang salah
+     * lebih buruk daripada merah.
+     *
+     * Tanpa fake sama sekali, test akan memanggil jaringan sungguhan: bukan
+     * merah, melainkan tiga detik timeout lalu hijau dengan nama kosong.
+     *
+     * @param  array<int, array{id: string, name: string, unit: string}>  $bahan
+     */
+    private function palsukanCatalog(array $bahan = []): void
+    {
+        Http::fake(['*/api/ingredient*' => Http::response($bahan, 200)]);
+    }
 
     /** Restock nambah saldo & mencatat tepat 1 movement bertanda benar. */
     public function test_owner_restock_menambah_saldo_dan_mencatat_movement(): void
@@ -52,16 +73,92 @@ class StockTest extends TestCase
         $headers = $this->authHeaders($tenant, $outlet);
 
         $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
+        $this->palsukanCatalog();
 
         $res = $this->withHeaders($headers)->getJson('/api/stock');
 
         $res->assertOk();
         $baris = $res->json('data.0');
         $this->assertSame(
-            ['ingredient_id', 'qty_on_hand', 'min_stock', 'updated_at'],
+            ['ingredient_id', 'ingredient_name', 'qty_on_hand', 'min_stock', 'updated_at'],
             array_keys($baris),
         );
         $this->assertSame($bahan, $baris['ingredient_id']);
+    }
+
+    /**
+     * Nama bahan datang dari Catalog, bukan dari database ini.
+     *
+     * Tanpa ini kasir melihat deretan UUID dan angka — benar secara data, tak
+     * berguna secara praktik. Nama tinggal di Catalog karena tabel bahannya
+     * owner-only; Inventory yang mengambilnya lewat token service supaya kasir
+     * tak pernah perlu izin ke Catalog sama sekali.
+     */
+    public function test_daftar_stok_menyertakan_nama_bahan_dari_catalog(): void
+    {
+        [$tenant, $outlet, $bahan] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+        $headers = $this->authHeaders($tenant, $outlet);
+
+        Http::fake(['*/api/ingredient*' => Http::response([
+            ['id' => $bahan, 'name' => 'Susu Full Cream', 'unit' => 'ml'],
+        ], 200)]);
+
+        $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
+
+        $this->withHeaders($headers)->getJson('/api/stock')
+            ->assertOk()
+            ->assertJsonPath('data.0.ingredient_id', $bahan)
+            ->assertJsonPath('data.0.ingredient_name', 'Susu Full Cream');
+    }
+
+    /**
+     * Catalog mati tak boleh mematikan layar stok.
+     *
+     * Angka saldonya ada di database service INI dan tetap benar; yang hilang
+     * cuma namanya. Menolak seluruh permintaan berarti kasir kehilangan
+     * informasi yang sebenarnya utuh di tangan kita — dan di tengah jam sibuk,
+     * layar stok yang kosong lebih berbahaya daripada layar berisi UUID.
+     */
+    public function test_catalog_mati_tetap_mengirim_saldo_dengan_nama_null(): void
+    {
+        [$tenant, $outlet, $bahan] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+        $headers = $this->authHeaders($tenant, $outlet);
+
+        $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
+
+        Http::fake(['*/api/ingredient*' => Http::response(null, 503)]);
+
+        $this->withHeaders($headers)->getJson('/api/stock')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.ingredient_name', null)
+            // Angkanya harus tetap benar — inilah alasan permintaannya tak digagalkan.
+            ->assertJsonPath('data.0.qty_on_hand', '5000.000');
+    }
+
+    /**
+     * Id bahan dikirim ke Catalog sekali saja per id, bukan sekali per baris.
+     *
+     * Belum jadi soal hari ini (satu outlet, satu baris per bahan), tapi daftar
+     * id yang menggelembung adalah cara paling sunyi membuat query string
+     * melewati batas panjang URL — dan gagalnya muncul sebagai 414 dari proxy,
+     * bukan sebagai apa pun yang menyebut stok.
+     */
+    public function test_id_bahan_tak_dikirim_dobel_ke_catalog(): void
+    {
+        [$tenant, $outlet, $bahan] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+        $headers = $this->authHeaders($tenant, $outlet);
+
+        $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
+        $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 2000]);
+        $this->palsukanCatalog();
+
+        $this->withHeaders($headers)->getJson('/api/stock')->assertOk();
+
+        Http::assertSent(function ($request) use ($bahan) {
+            return str_contains($request->url(), '/api/ingredient')
+                && substr_count($request->url(), $bahan) === 1;
+        });
     }
 
     /** Restock kedua akumulatif; saldo == jumlah seluruh movement (invarian ledger). */
@@ -200,6 +297,8 @@ class StockTest extends TestCase
         // Owner mengisi stok dulu.
         $this->withHeaders($this->authHeaders($tenant, $outlet))
             ->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
+
+        $this->palsukanCatalog();
 
         // Kasir BOLEH lihat saldo (200) — perubahan RBAC F8a-5.
         $this->withHeaders($this->authHeaders($tenant, $outlet, 'cashier'))

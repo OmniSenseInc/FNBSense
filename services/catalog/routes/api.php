@@ -19,6 +19,15 @@ Route::get('menu', [MenuController::class, 'show'])->middleware('throttle:60,1')
 // Resep batch untuk Inventory (service-to-service, auth X-Service-Token).
 // ?tenant=<uuid>&products=<uuid,uuid,...>
 Route::get('recipe', [RecipeController::class, 'batch'])->middleware(['service', 'throttle:120,1']);
+
+// Nama bahan batch untuk Inventory (service-to-service, auth X-Service-Token).
+// ?tenant=<uuid>&ids=<uuid,uuid,...>
+//
+// Singular `ingredient`, sepola `recipe` di atas: bentuk singular menandai
+// endpoint mesin, bentuk jamak (`ingredients` di grup owner) menandai CRUD
+// manusia. Dua alamat berbeda karena dua pembacanya berbeda — kasir lewat
+// Inventory cuma boleh melihat nama, owner boleh melihat segalanya.
+Route::get('ingredient', [IngredientController::class, 'batch'])->middleware(['service', 'throttle:120,1']);
 Route::post('internal/promotions/evaluate', PromotionEvaluationController::class)->middleware(['service', 'throttle:120,1']);
 
 // Manajemen menu — owner saja (JWT terverifikasi + role:owner).

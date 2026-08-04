@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\CatalogUnavailableException;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
+use App\Services\CatalogRecipeClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Saldo stok: dibaca kasir & owner, DIUBAH owner saja (restock + opname manual).
@@ -20,6 +23,10 @@ use Illuminate\Support\Facades\DB;
  */
 class StockController extends Controller
 {
+    // Disuntik lewat container, sama seperti di OrderPaidConsumer — supaya test
+    // bisa memalsukan Catalog tanpa jaringan sungguhan.
+    public function __construct(private readonly CatalogRecipeClient $catalog) {}
+
     /**
      * Daftar saldo stok outlet ini.
      *
@@ -39,12 +46,50 @@ class StockController extends Controller
             ->orderBy('ingredient_id')
             ->get();
 
+        $nama = $this->namaBahan($this->tenantId($request), $balances->pluck('ingredient_id')->all());
+
         return response()->json(['data' => $balances->map(fn (StockBalance $saldo) => [
             'ingredient_id' => $saldo->ingredient_id,
+            // null bukan kelalaian: lihat namaBahan(). Layar wajib menyiapkan
+            // penggantinya, bukan menampilkan "null".
+            'ingredient_name' => $nama[$saldo->ingredient_id] ?? null,
             'qty_on_hand' => $saldo->qty_on_hand,
             'min_stock' => $saldo->min_stock,
             'updated_at' => $saldo->updated_at,
         ])->all()]);
+    }
+
+    /**
+     * Nama bahan dari Catalog — hiasan, bukan syarat.
+     *
+     * Nama tinggal di Catalog dan tabelnya owner-only, jadi Inventory yang
+     * mengambilnya lewat token service. Kasir tak pernah menyentuh Catalog:
+     * kalau ia boleh, harga beli yang kelak masuk ke tabel bahan ikut terbuka.
+     *
+     * Catalog mati TIDAK boleh mematikan layar stok. Angka saldo ada di
+     * database ini sendiri dan tetap benar; menolak seluruh permintaan cuma
+     * karena namanya tak terambil berarti kasir kehilangan informasi yang
+     * sebenarnya utuh di tangan kita. Jadi galatnya ditangkap, dicatat, dan
+     * setiap baris tetap keluar dengan ingredient_name null.
+     *
+     * @param  array<int, string>  $ingredientIds
+     * @return array<string, string>
+     */
+    private function namaBahan(string $tenantId, array $ingredientIds): array
+    {
+        try {
+            return $this->catalog->ingredientNames($tenantId, array_values(array_unique($ingredientIds)));
+        } catch (CatalogUnavailableException $e) {
+            // Warning, bukan error: layarnya tetap berguna, dan menaikkannya ke
+            // error akan melatih mata mengabaikan error.
+            Log::warning('Nama bahan tak terambil dari Catalog; daftar stok tetap dikirim tanpa nama.', [
+                'tenant_id' => $tenantId,
+                'jumlah_bahan' => count($ingredientIds),
+                'sebab' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
     }
 
     /**
