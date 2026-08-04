@@ -37,6 +37,13 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (jalur) => jalur.replace(/^\/notification/, ''),
       },
+      // Saldo stok. Kasir boleh MELIHAT, tak boleh mengubah — pagarnya
+      // `role:owner` di Inventory untuk restock/adjust, bukan di sini.
+      '/inventory': {
+        target: 'http://127.0.0.1:8003',
+        changeOrigin: true,
+        rewrite: (jalur) => jalur.replace(/^\/inventory/, ''),
+      },
     },
   },
 })

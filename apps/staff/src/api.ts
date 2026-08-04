@@ -15,6 +15,7 @@
 const IAM = import.meta.env.VITE_IAM_URL
 const ORDERING = import.meta.env.VITE_ORDERING_URL
 const NOTIFICATION = import.meta.env.VITE_NOTIFICATION_URL
+const INVENTORY = import.meta.env.VITE_INVENTORY_URL
 
 /**
  * Token disimpan di localStorage, bukan memori, supaya kasir yang tak sengaja
@@ -763,6 +764,45 @@ export async function hitungBelumDibaca(): Promise<number> {
 
 export async function tandaiSemuaDibaca(): Promise<void> {
   await panggil('/api/notifications/read-all', { method: 'POST' }, NOTIFICATION)
+}
+
+/**
+ * Saldo satu bahan di outlet ini.
+ *
+ * `nama` boleh null dan itu BUKAN kelalaian: namanya tinggal di Catalog, dan
+ * Inventory sengaja tetap membalas 200 saat Catalog tak terjangkau — angka
+ * saldonya sendiri tetap benar. Layar wajib menyiapkan penggantinya.
+ */
+export type Stok = {
+  id: string
+  nama: string | null
+  qty: number
+  minimum: number | null
+  diperbarui: string | null
+}
+
+export function petakanStok(m: Record<string, unknown>): Stok {
+  const minimum = keAngka(m.min_stock)
+
+  return {
+    id: String(m.ingredient_id ?? ''),
+    // Nama kosong ('') diperlakukan sama dengan tak ada: keduanya sama-sama tak
+    // memberi tahu kasir bahan apa ini, dan satu jalur pengganti lebih sedikit
+    // daripada dua.
+    nama: typeof m.ingredient_name === 'string' && m.ingredient_name !== '' ? m.ingredient_name : null,
+    // NaN, bukan 0. Saldo yang tak terbaca lalu ditampilkan sebagai nol
+    // berbunyi "habis" — dan "habis" adalah kalimat yang membuat orang berhenti
+    // menjual sesuatu yang sebenarnya masih ada.
+    qty: keAngka(m.qty_on_hand),
+    minimum: Number.isNaN(minimum) ? null : minimum,
+    diperbarui: typeof m.updated_at === 'string' ? m.updated_at : null,
+  }
+}
+
+export async function ambilStok(): Promise<Stok[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/stock', undefined, INVENTORY)
+
+  return (Array.isArray(data) ? data : []).map(petakanStok)
 }
 
 export function peranSaya(): string | null {

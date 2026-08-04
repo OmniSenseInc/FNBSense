@@ -280,6 +280,11 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
           <Link to="/dapur" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
             Dapur
           </Link>
+          {/* Tanpa penjaga `owner`, beda dari Meja & Setelan di bawah: kasir
+              memang boleh melihat stok (role:cashier,owner di Inventory). */}
+          <Link to="/stok" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+            Stok
+          </Link>
           <Link to="/riwayat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
             Riwayat
           </Link>

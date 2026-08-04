@@ -9,6 +9,7 @@ import LayarNota from './LayarNota'
 import LayarNotifikasi from './LayarNotifikasi'
 import LayarRiwayat from './LayarRiwayat'
 import LayarSetelan from './LayarSetelan'
+import LayarStok from './LayarStok'
 
 /**
  * Kerangka rute app kasir.
@@ -55,6 +56,11 @@ export default function App() {
               luar dev, jadi belum ada yang mem-bookmark-nya, dan route "*" di
               bawah sudah memulangkan alamat asing ke antrean. */}
           <Route path="/dapur" element={<LayarDapur onKeluar={keluar} />} />
+          {/* Kasir DAN owner, tak seperti /setelan dan /meja di bawah: kasir
+              yang sedang meracik perlu tahu bahannya masih cukup. Yang
+              dibedakan bukan siapa boleh melihat, melainkan siapa boleh
+              mengubah — dan mengubah tak ada di layar ini sama sekali. */}
+          <Route path="/stok" element={<LayarStok onKeluar={keluar} />} />
           {/* Tak dijaga di sini: penjaganya `role:owner` di Ordering, dan
               kasir yang memaksa alamat ini melihat form kosong dengan pesan
               403 — bukan setelan outlet. Menambahkan penjaga kedua di layar

@@ -319,9 +319,18 @@ services:
       CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN}
     volumes: *keys
     depends_on: *depends
-    # Tanpa label Traefik: layar stok belum tersambung ke app kasir, jadi tak
-    # ada yang memanggil HTTP-nya. Yang bekerja sekarang cuma consumer-nya di
-    # bawah. Rutenya ditambahkan saat layar itu dibuat, bukan sebelumnya.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.inventory.loadbalancer.server.port=8080"
+      # Hanya domain STAF. Tak ada padanannya di domain pelanggan — saldo bahan
+      # bukan urusan orang yang memesan kopi, dan rute yang tak pernah dipakai
+      # tetap rute yang bisa dipanggil.
+      - "traefik.http.routers.inventory.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/inventory`)"
+      - "traefik.http.routers.inventory.entrypoints=websecure"
+      - "traefik.http.routers.inventory.tls.certresolver=le"
+      - "traefik.http.routers.inventory.middlewares=inventory-strip"
+      - "traefik.http.middlewares.inventory-strip.stripprefix.prefixes=/inventory"
     networks: [fnbsense]
 
   notification:
@@ -454,6 +463,7 @@ services:
         VITE_IAM_URL: /iam
         VITE_ORDERING_URL: /ordering
         VITE_NOTIFICATION_URL: /notification
+        VITE_INVENTORY_URL: /inventory
         # URL PENUH, satu-satunya di sini — nilainya berakhir di dalam QR yang
         # dicetak dan ditempel di meja, dan yang memindainya adalah HP orang
         # lain. Alamat relatif di sini menghasilkan QR yang menunjuk ke domain
