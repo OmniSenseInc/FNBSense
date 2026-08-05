@@ -74,6 +74,17 @@ x-keys: &keys
 x-laravel-build: &laravel-build
   dockerfile: ../../infra/php/Dockerfile
 
+# Daemon memakai image yang sama dengan service HTTP, jadi ia mewarisi
+# HEALTHCHECK-nya (wget ke :8080/up) — padahal ia tak mendengarkan HTTP sama
+# sekali. Akibatnya keempatnya berdiri selamanya sebagai "unhealthy": terbukti
+# di uji lokal, ketiganya merah sementara semuanya bekerja normal.
+#
+# Bahayanya bukan tampilan. Container yang SELALU unhealthy membuat kegagalan
+# sungguhan mustahil dibedakan dari keadaan biasa, dan alat pemantau apa pun
+# yang dipasang nanti akan mulai hidup dengan tiga alarm yang harus diabaikan.
+x-tanpa-healthcheck: &tanpa-healthcheck
+  disable: true
+
 x-depends: &depends
   mysql:
     condition: service_healthy
@@ -85,7 +96,16 @@ services:
   # Gerbang
   # -------------------------------------------------------------------------
   gateway:
-    image: traefik:v3.3
+    # v3.6, bukan v3.3. Dengan v3.3 gerbang ini TIDAK menemukan satu container
+    # pun di Docker Engine 29.x — lognya berbunyi "Failed to retrieve
+    # information of the docker client and server host: Error response from
+    # daemon:" (pesan galatnya kosong), dan akibatnya SETIAP alamat dibalas 404
+    # tanpa satu pun petunjuk yang menyebut Traefik.
+    #
+    # Socketnya sendiri sehat — container polos berhasil memanggil /version
+    # lewat socket yang sama. Yang tak cocok versi klien Docker di dalam
+    # Traefik lama terhadap engine baru.
+    image: traefik:v3.6
     container_name: fnbsense-gateway
     restart: unless-stopped
     command:
@@ -106,9 +126,14 @@ services:
       # tak mengganggu, Traefik menangani jalur ACME sebelum mengalihkan.
       - "--certificatesresolvers.le.acme.httpchallenge=true"
       - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+    # Default 80/443 — produksi tak perlu menyetel apa pun. Dijadikan variabel
+    # semata supaya seluruh tumpukan ini bisa dijalankan di laptop pengembang
+    # yang port 80/443-nya sudah dipakai Laragon; menguji sambungan antar
+    # container di tempat yang murah jauh lebih baik daripada menemukannya
+    # lewat SSH di VPS.
     ports:
-      - "80:80"
-      - "443:443"
+      - "${GATEWAY_HTTP_PORT:-80}:80"
+      - "${GATEWAY_HTTPS_PORT:-443}:443"
     # Dasbor Traefik TIDAK dinyalakan. Di berkas dev ia terbuka tanpa sandi di
     # 8080, dan isinya adalah peta lengkap seluruh service beserta rutenya.
     volumes:
@@ -392,6 +417,7 @@ services:
     environment: *ordering-env
     volumes: *keys
     depends_on: *depends
+    healthcheck: *tanpa-healthcheck
     networks: [fnbsense]
 
   ordering-schedule:
@@ -404,6 +430,7 @@ services:
     environment: *ordering-env
     volumes: *keys
     depends_on: *depends
+    healthcheck: *tanpa-healthcheck
     networks: [fnbsense]
 
   inventory-consume:
@@ -416,6 +443,7 @@ services:
     environment: *inventory-env
     volumes: *keys
     depends_on: *depends
+    healthcheck: *tanpa-healthcheck
     networks: [fnbsense]
 
   notification-consume:
@@ -428,6 +456,7 @@ services:
     environment: *notification-env
     volumes: *keys
     depends_on: *depends
+    healthcheck: *tanpa-healthcheck
     networks: [fnbsense]
 
   # -------------------------------------------------------------------------

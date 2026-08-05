@@ -93,6 +93,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.production ps
 Database dibuat otomatis oleh `infra/mysql/init.sql`, tapi **tabelnya tidak**.
 Jalankan sekali, per service:
 
+> **Sebelum langkah ini, `ordering-relay` akan restart berulang-ulang — itu
+> normal.** Ia mencari tabel `outbox` yang belum dibuat dan mati dengan
+> `Base table or view not found`. Terhitung 17 restart saat uji lokal sebelum
+> migrasi dijalankan. Begitu migrasi selesai ia pulih sendiri (`restart:
+> unless-stopped`), tanpa perlu disentuh. Jangan menghabiskan waktu men-debug
+> daemon di antara langkah 4 dan 5.
+
 ```bash
 for s in iam catalog ordering inventory notification; do
   docker compose -f docker-compose.prod.yml --env-file .env.production \
