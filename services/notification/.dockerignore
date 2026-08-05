@@ -15,5 +15,17 @@ storage/logs/*.log
 storage/framework/cache/data/*
 storage/framework/sessions/*
 storage/framework/views/*
+
+# Cache bootstrap hasil generate di mesin pengembang. WAJIB dikecualikan.
+#
+# packages.php dan services.php memuat daftar service provider yang ditemukan
+# saat `composer install` dijalankan DENGAN dependensi dev. Image dibangun
+# --no-dev, jadi provider seperti Collision tak ada di sana — tapi cache yang
+# ikut tersalin tetap menyebutnya, dan `package:discover` mati dengan
+# "Class NunoMaduro\Collision\...\CollisionServiceProvider not found".
+#
+# Notification yang pertama kena. Empat service lain cuma belum kena karena
+# cache mereka kebetulan belum memuat provider dev — bukan karena aman.
+bootstrap/cache/*.php
 .phpunit.result.cache
 .git/

@@ -11,7 +11,17 @@
 # melihat log. Dua container per service berarti sepuluh container hanya untuk
 # menyajikan lima aplikasi, dan setiap kegagalan harus ditelusuri di dua tempat.
 
-FROM dunglas/frankenphp:1-php8.3-alpine
+# php8.5, bukan 8.3 seperti yang tertulis di composer.json ("php": "^8.3").
+#
+# Yang mengikat bukan composer.json melainkan composer.lock, dan lock itu
+# diselesaikan di mesin pengembangan ber-PHP 8.5 — ia menarik symfony 8.1.x yang
+# menuntut >=8.4.1. Build dengan 8.3 gagal di `composer install` dengan belasan
+# blok "Problem" yang tak satu pun menyebut versi image sebagai sebabnya.
+#
+# 8.5 dan bukan 8.4 walau 8.4 sudah cukup memenuhi lock: 8.5 adalah versi yang
+# benar-benar dipakai menjalankan seluruh test service ini. Produksi di 8.4
+# berarti menjalankan versi yang tak pernah sekali pun diuji.
+FROM dunglas/frankenphp:1-php8.5-alpine
 
 # Daftarnya sependek ini dengan sengaja. Tiap ekstensi di sini menarik paket
 # build lewat jaringan saat image dibangun, dan jaringan itulah bagian build
