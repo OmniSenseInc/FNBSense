@@ -16,6 +16,25 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Di produksi tak ada satu pun permintaan yang datang langsung — semuanya
+        // lewat gerbang Traefik. Tanpa baris ini `$request->ip()` mengembalikan
+        // alamat container gerbang, SATU nilai untuk seluruh internet, dan
+        // akibatnya bukan sekadar log yang keliru: setiap rate limiter yang
+        // memakai ip() jadi berbagi satu ember. Dua puluh pesanan per menit dari
+        // mana pun sudah cukup menutup jalur pesan bagi SEMUA pelanggan.
+        //
+        // Yang dipercaya hanya rentang privat, bukan '*'. Mempercayai semua
+        // justru membalik masalahnya: siapa pun boleh mengarang X-Forwarded-For
+        // dan melewati limiter sepenuhnya. Rentang privat aman di sini karena
+        // port 8080 container ini tak pernah dipetakan ke host (lihat
+        // docker-compose.prod.yml) — satu-satunya yang bisa menyentuhnya adalah
+        // tetangga di jaringan Docker.
+        $middleware->trustProxies(at: [
+            '10.0.0.0/8',
+            '172.16.0.0/12',
+            '192.168.0.0/16',
+        ]);
+
         // Ordering = API-only: semua request API diperlakukan sebagai JSON.
         $middleware->api(prepend: [
             \App\Http\Middleware\ForceJsonResponse::class,

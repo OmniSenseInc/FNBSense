@@ -50,6 +50,18 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-in
 
 COPY . .
 
+# `storage:link` di bawah membuat public/storage -> storage/app/public.
+#
+# Tanpa itu gambar QRIS yang diunggah owner tersimpan dengan benar tapi TIDAK
+# PERNAH bisa diambil: alamat yang dikirim ke pelanggan (/storage/qris/....png)
+# menunjuk ke jalur yang tak ada di public/, dan yang terlihat di HP pelanggan
+# cuma gambar rusak di halaman bayar. Kegagalannya sunyi — tak ada log, tak ada
+# galat, cuma tak ada yang bisa membayar.
+#
+# Dijalankan untuk kelima service walau hanya Ordering yang menyimpan berkas:
+# perintahnya idempoten dan tak berbiaya, sedangkan mengecualikan empat service
+# menuntut Dockerfile yang tahu ia sedang membangun yang mana.
+#
 # .env DIHAPUS, bukan sekadar diabaikan lewat .dockerignore. Keduanya dipasang
 # karena yang satu bisa lupa: image yang terlanjur membawa .env pengembangan
 # akan diam-diam memakai kredensial itu di produksi kalau satu variabel env
@@ -57,6 +69,7 @@ COPY . .
 RUN rm -f .env .env.* \
     && composer dump-autoload --no-dev --optimize --classmap-authoritative \
     && php artisan package:discover --ansi \
+    && php artisan storage:link --force \
     && chown -R www-data:www-data storage bootstrap/cache
 
 # /data dan /config milik Caddy, mesin di dalam FrankenPHP. Ia menulis ke sana

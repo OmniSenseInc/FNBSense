@@ -16,6 +16,13 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
+        // Lihat catatan panjang di services/ordering/bootstrap/app.php.
+        $middleware->trustProxies(at: [
+            '10.0.0.0/8',
+            '172.16.0.0/12',
+            '192.168.0.0/16',
+        ]);
+
         $middleware->api(prepend: [ForceJsonResponse::class]);
         $middleware->alias([
             'jwt' => AuthenticateJwt::class,

@@ -14,6 +14,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Lihat catatan panjang di services/ordering/bootstrap/app.php.
+        $middleware->trustProxies(at: [
+            '10.0.0.0/8',
+            '172.16.0.0/12',
+            '192.168.0.0/16',
+        ]);
+
         // Inventory = API-only: semua request API diperlakukan sebagai JSON.
         $middleware->api(prepend: [
             \App\Http\Middleware\ForceJsonResponse::class,

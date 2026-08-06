@@ -60,6 +60,43 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Rute app ini di sisi klien: /dapur, /nota/<id>, /t/<token> tak punya berkas
 # padanan di disk. Tanpa fallback, semuanya jalan saat diklik dari dalam app
 # dan 404 begitu di-refresh atau dibuka langsung dari QR.
+# Header keamanan, ditaruh di berkas terpisah dan di-include DUA KALI di bawah.
+#
+# Bukan kerapian: `add_header` di nginx TIDAK diwariskan ke blok anak yang
+# punya add_header sendiri. Blok /assets/ punya satu (Cache-Control), jadi
+# menulis header ini sekali di tingkat server berarti seluruh berkas JS dan CSS
+# terkirim tanpa satu pun dari mereka.
+#
+# Berakhiran .inc, bukan .conf: conf.d/*.conf ikut ter-include otomatis ke
+# konteks http, dan berkas berisi add_header di sana akan ditolak nginx.
+RUN cat > /etc/nginx/keamanan.inc <<'EOF'
+# HSTS. Traefik memang mengalihkan http->https, tapi pengalihan itu baru terjadi
+# SETELAH permintaan pertama meninggalkan perangkat — di Wi-Fi kafe, permintaan
+# itulah yang disadap. Header ini yang membuat browser tak pernah mengulanginya
+# lagi. Token kasir yang lewat di sana membuka konfirmasi uang dan pembatalan.
+#
+# Tanpa `preload`: masuk daftar preload adalah keputusan yang praktis tak bisa
+# ditarik kembali, dan domainnya belum tentu final.
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# Token staf tinggal di localStorage, jadi satu XSS = satu akun kasir diambil
+# alih. Hari ini tak ada jalan masuknya (React meng-escape, tak ada innerHTML
+# di kedua app) — CSP ini yang menjaga supaya itu tetap benar setelah komponen
+# ke-limapuluh ditambahkan.
+#
+# 'unsafe-inline' hanya untuk style: Tailwind menyuntikkan <style>, sementara
+# script tak satu pun inline (Vite selalu memancarkan berkas terpisah).
+# img-src menerima data: untuk QR meja yang digambar di kanvas, dan https:
+# untuk alamat QRIS eksternal yang boleh diisi owner lewat PUT settings.
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+
+add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+# Berlebihan berdampingan dengan frame-ancestors di atas, dan itu disengaja:
+# yang satu untuk browser yang belum mengerti CSP, yang lain untuk sisanya.
+add_header X-Frame-Options "DENY" always;
+EOF
+
 RUN cat > /etc/nginx/conf.d/default.conf <<'EOF'
 server {
     listen 80;
@@ -72,10 +109,12 @@ server {
     location /assets/ {
         expires 1y;
         add_header Cache-Control "public, immutable";
+        include /etc/nginx/keamanan.inc;
     }
 
     location / {
         try_files $uri $uri/ /index.html;
+        include /etc/nginx/keamanan.inc;
     }
 
     gzip on;

@@ -22,6 +22,11 @@ volumes:
   rabbitmq-data:
   redis-data:
   letsencrypt:
+  # Gambar QRIS yang diunggah owner. Wajib volume, bukan lapisan container:
+  # `up -d --build` mengganti containernya, dan tanpa ini QRIS outlet lenyap
+  # tiap kali ada perbaikan sekecil apa pun yang dideploy — kafe kehilangan
+  # jalur bayarnya di tengah hari tanpa ada yang menyentuh setelan.
+  qris:
 
 # ---------------------------------------------------------------------------
 # Potongan yang dipakai ulang
@@ -271,7 +276,20 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=fnbsense"
       - "traefik.http.services.catalog.loadbalancer.server.port=8080"
-      - "traefik.http.routers.catalog.rule=Host(`${DOMAIN_CUSTOMER}`) && PathPrefix(`/catalog`)"
+      # Tiga alamat mesin dikecualikan dari gerbang. Mereka dipanggil Ordering
+      # dan Inventory lewat http://catalog:8080 di dalam jaringan Docker, jadi
+      # mengeluarkannya dari rute publik tak memutus apa pun — sementara
+      # membiarkannya berarti resep dan biaya bahan SELURUH tenant tergantung
+      # pada satu token statis yang dipakai bersama tiga container dan tak
+      # pernah dirotasi. Token itu tetap dipasang (fail-closed); yang dicabut
+      # di sini adalah kesempatan mencobanya dari internet.
+      #
+      # Path(...) yang EKSAK, bukan PathPrefix: `/catalog/api/recipes` dan
+      # `/catalog/api/ingredients` — CRUD owner, berakhiran -s — berawalan sama
+      # persis dengan yang bentuk tunggal. PathPrefix akan ikut memblokir
+      # keduanya, dan owner kehilangan layar resep tanpa satu pun petunjuk yang
+      # menyebut Traefik.
+      - "traefik.http.routers.catalog.rule=Host(`${DOMAIN_CUSTOMER}`) && PathPrefix(`/catalog`) && !Path(`/catalog/api/recipe`) && !Path(`/catalog/api/ingredient`) && !PathPrefix(`/catalog/api/internal`)"
       - "traefik.http.routers.catalog.entrypoints=websecure"
       - "traefik.http.routers.catalog.tls.certresolver=le"
       - "traefik.http.routers.catalog.middlewares=catalog-strip"
@@ -302,7 +320,13 @@ services:
       CATALOG_TIMEOUT: "3"
       CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN}
       PROMOTIONS_ENABLED: "true"
-    volumes: *keys
+    # Bukan *keys seperti yang lain: SATU-SATUNYA service yang menerima unggahan
+    # berkas, jadi ia butuh tempat menyimpan yang hidup lebih lama daripada
+    # containernya. Daemon ordering-* di bawah tetap memakai *keys — mereka tak
+    # pernah menyentuh berkas unggahan.
+    volumes:
+      - ./infra/keys:/keys:ro
+      - qris:/app/storage/app/public
     depends_on: *depends
     labels:
       - "traefik.enable=true"

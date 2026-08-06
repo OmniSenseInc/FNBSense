@@ -14,6 +14,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Lihat catatan panjang di services/ordering/bootstrap/app.php. Di sini
+        // taruhannya paling besar: tanpa ini limiter `login` (6/menit per IP)
+        // melihat seluruh internet sebagai satu alamat, dan enam percobaan
+        // login dari mana pun mengunci SELURUH kasir di luar sistem.
+        $middleware->trustProxies(at: [
+            '10.0.0.0/8',
+            '172.16.0.0/12',
+            '192.168.0.0/16',
+        ]);
+
         // Semua route API diperlakukan sebagai JSON (IAM = API-only).
         $middleware->api(prepend: [
             \App\Http\Middleware\ForceJsonResponse::class,
