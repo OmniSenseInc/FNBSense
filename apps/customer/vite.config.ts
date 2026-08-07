@@ -25,6 +25,16 @@ export default defineConfig({
    */
   server: {
     host: true,
+    // Vite menolak permintaan yang datang dengan nama host tak dikenal — pagar
+    // yang dipasang setelah ada celah di dev server, dan pagar itu benar.
+    // Konsekuensinya: alamat tunnel (uji dari HP sungguhan lewat HTTPS) ikut
+    // ditolak dengan "Blocked request", yang mudah disalahartikan sebagai
+    // tunnelnya rusak. Awalan titik mengizinkan seluruh subdomainnya, sebab
+    // alamat tunnel gratisan berganti tiap kali dinyalakan.
+    //
+    // Hanya berlaku untuk `npm run dev`. Produksi tak memakai server ini sama
+    // sekali — image-nya nginx yang melayani berkas statis.
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/ordering': {
         target: 'http://127.0.0.1:8000',

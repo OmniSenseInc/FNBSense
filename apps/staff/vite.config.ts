@@ -20,6 +20,8 @@ export default defineConfig({
   server: {
     host: true,
     port: 5174,
+    // Alasannya sama persis dengan apps/customer — lihat catatan di sana.
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/iam': {
         target: 'http://127.0.0.1:8002',
