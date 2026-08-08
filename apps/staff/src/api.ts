@@ -1069,6 +1069,111 @@ export async function ubahProduk(
   )
 }
 
+/**
+ * Satuan dasar bahan — cermin `enum('g','ml','pcs')` di migrasi `ingredients`.
+ *
+ * ponytail: daftar disalin, bukan diambil dari server, karena Catalog tak punya
+ * endpoint yang menyebutkannya. Kalau kelak satuan bertambah (l, kg), yang salah
+ * bukan layar ini melainkan dua tempat yang harus diubah bersamaan — pindahkan
+ * ke `GET /api/units` saat itu terjadi, jangan sekarang.
+ */
+export const SATUAN = ['g', 'ml', 'pcs'] as const
+
+export type Bahan = {
+  id: string
+  nama: string
+  satuan: string
+}
+
+export type BarisResep = {
+  id: string
+  produkId: string
+  bahanId: string
+  takaran: number
+}
+
+export function petakanBahan(m: Record<string, unknown>): Bahan {
+  return {
+    id: String(m.id ?? ''),
+    nama: typeof m.name === 'string' ? m.name : '',
+    satuan: typeof m.unit === 'string' ? m.unit : '',
+  }
+}
+
+export function petakanResep(m: Record<string, unknown>): BarisResep {
+  return {
+    id: String(m.id ?? ''),
+    produkId: String(m.product_id ?? ''),
+    bahanId: String(m.ingredient_id ?? ''),
+    // NaN, bukan 0, sepola harga: takaran yang tak terbaca lalu tampil sebagai 0
+    // adalah resep yang tak pernah memotong stok — persis kerusakan sunyi yang
+    // layar resep ini ada untuk mencegahnya.
+    takaran: keAngka(m.qty_per_unit),
+  }
+}
+
+export async function ambilBahan(): Promise<Bahan[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/ingredients', undefined, CATALOG)
+
+  return (Array.isArray(data) ? data : []).map(petakanBahan)
+}
+
+export async function buatBahan(nama: string, satuan: string): Promise<void> {
+  await mintaJson(
+    '/api/ingredients',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nama, unit: satuan }),
+    },
+    CATALOG,
+  )
+}
+
+export async function hapusBahan(id: string): Promise<void> {
+  await mintaJson(`/api/ingredients/${encodeURIComponent(id)}`, { method: 'DELETE' }, CATALOG)
+}
+
+/** Seluruh resep tenant sekaligus — pemanggilnya menyaring per produk. */
+export async function ambilResep(): Promise<BarisResep[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/recipes', undefined, CATALOG)
+
+  return (Array.isArray(data) ? data : []).map(petakanResep)
+}
+
+export async function buatResep(produkId: string, bahanId: string, takaran: number): Promise<void> {
+  await mintaJson(
+    '/api/recipes',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_id: produkId,
+        ingredient_id: bahanId,
+        qty_per_unit: takaran,
+      }),
+    },
+    CATALOG,
+  )
+}
+
+/** Server hanya menerima takaran — ganti produk/bahan berarti resep baru. */
+export async function ubahTakaran(id: string, takaran: number): Promise<void> {
+  await mintaJson(
+    `/api/recipes/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qty_per_unit: takaran }),
+    },
+    CATALOG,
+  )
+}
+
+export async function hapusResep(id: string): Promise<void> {
+  await mintaJson(`/api/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' }, CATALOG)
+}
+
 export function peranSaya(): string | null {
   const bagian = bacaToken()?.split('.')[1]
   if (!bagian) return null

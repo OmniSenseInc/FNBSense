@@ -1,5 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { labelMeja, sisaMenit, tanggalJam } from './format'
+import { keJumlah, labelMeja, sisaMenit, tanggalJam } from './format'
+
+describe('keJumlah', () => {
+  it.each([
+    ['bulat', '18', 18],
+    ['desimal satu angka', '1.5', 1.5],
+    ['desimal dua angka', '0.25', 0.25],
+    ['berspasi', '  7 ', 7],
+    ['nol', '0', 0],
+  ])('menerima %s', (_nama, teks, harap) => {
+    expect(keJumlah(teks as string)).toBe(harap)
+  })
+
+  it.each([
+    ['pemisah ribuan', '1.000'],
+    ['koma desimal', '1,5'],
+    ['negatif', '-3'],
+    ['kosong', ''],
+    ['bukan angka', 'banyak'],
+  ])('menolak %s', (_nama, teks) => {
+    // null, bukan 0: nol adalah takaran/hitungan yang SAH tapi bermakna lain.
+    // Menyamakan "tak terbaca" dengan "nol" adalah cara opname menghapus saldo
+    // dan resep berhenti memotong stok tanpa satu pun pesan galat.
+    expect(keJumlah(teks as string)).toBeNull()
+  })
+})
 
 describe('tanggalJam', () => {
   it('membawa tanggalnya, bukan cuma jam', () => {

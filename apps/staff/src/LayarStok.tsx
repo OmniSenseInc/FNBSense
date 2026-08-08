@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { ambilStok, opnameBahan, peranSaya, restokBahan, SESI_HABIS, type Stok } from './api'
-import { tanggalJam } from './format'
+import { keJumlah, tanggalJam } from './format'
 
 /**
  * Saldo stok bahan.
@@ -59,23 +59,6 @@ export default function LayarStok({ onKeluar }: { onKeluar: () => void }) {
       batal = true
     }
   }, [versi])
-
-  /**
-   * Teks isian -> jumlah bahan, atau null kalau tak masuk akal.
-   *
-   * Titik BOLEH di sini, beda dari isian rupiah: bahan memang bisa 1.5 liter.
-   * Yang ditolak adalah pecahan tiga digit — "1.000" hampir selalu berarti
-   * seribu dalam tulisan Indonesia, sementara JavaScript membacanya sebagai
-   * satu. Menerimanya diam-diam berarti opname yang menghapus 999 dari saldo
-   * dan satu baris riwayat yang menyatakan itu memang hasil hitungan fisik.
-   */
-  const keJumlah = (teks: string): number | null => {
-    const bersih = teks.trim()
-    if (!/^\d+(\.\d{1,2})?$/.test(bersih)) return null
-    const angka = Number(bersih)
-
-    return Number.isFinite(angka) ? angka : null
-  }
 
   const kirim = (stok: Stok) => {
     const jumlah = keJumlah(nilai)

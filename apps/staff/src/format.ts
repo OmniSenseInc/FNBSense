@@ -15,6 +15,27 @@ export function rupiah(nilai: number): string {
 }
 
 /**
+ * Teks isian -> jumlah bahan, atau null kalau tak masuk akal.
+ *
+ * Titik BOLEH di sini, beda dari isian rupiah: bahan memang bisa 1.5 liter.
+ * Yang ditolak adalah pecahan tiga digit — "1.000" hampir selalu berarti seribu
+ * dalam tulisan Indonesia, sementara JavaScript membacanya sebagai satu.
+ * Menerimanya diam-diam berarti opname yang menghapus 999 dari saldo, atau resep
+ * yang memotong seperseribu bahan tiap gelas dan membuat gudang tampak abadi.
+ *
+ * Dipakai layar stok DAN panel resep — dua tempat yang memasukkan takaran bahan
+ * lewat papan ketik. Tinggal di sini, bukan disalin, supaya "1.000 itu seribu"
+ * cuma diputuskan sekali.
+ */
+export function keJumlah(teks: string): number | null {
+  const bersih = teks.trim()
+  if (!/^\d+(\.\d{1,2})?$/.test(bersih)) return null
+  const angka = Number(bersih)
+
+  return Number.isFinite(angka) ? angka : null
+}
+
+/**
  * Penanda tempat di kepala kartu: nama meja, "Bawa pulang", atau tak ada.
  *
  * Inilah pembeda terkuat yang dipegang kasir saat dua pesanan bertotal sama

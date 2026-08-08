@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { bacaToken } from './api'
 import LayarAntrean from './LayarAntrean'
+import LayarBahan from './LayarBahan'
 import LayarDapur from './LayarDapur'
 import LayarLogin from './LayarLogin'
 import LayarMeja from './LayarMeja'
@@ -75,6 +76,11 @@ export default function App() {
               bukan di sini. Kasir yang memaksa alamat ini melihat pesan galat,
               bukan menu yang bisa diubahnya. */}
           <Route path="/menu" element={<LayarMenu onKeluar={keluar} />} />
+          {/* Alamat sendiri, sementara resep justru menumpang di /menu: bahan
+              adalah daftar induk yang berdiri lepas dari produk mana pun, dan
+              seringnya diisi sekali di awal lalu ditinggal. Resep sebaliknya —
+              ia tak berarti apa-apa tanpa produk yang dimilikinya. */}
+          <Route path="/bahan" element={<LayarBahan onKeluar={keluar} />} />
           <Route path="/setelan" element={<LayarSetelan onKeluar={keluar} />} />
           {/* Sama seperti /setelan: penjaganya `role:owner` di Ordering, bukan
               di sini. */}

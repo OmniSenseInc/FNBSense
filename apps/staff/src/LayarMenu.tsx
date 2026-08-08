@@ -1,16 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import {
+  ambilBahan,
   ambilKategori,
   ambilProduk,
+  ambilResep,
   buatKategori,
   buatProduk,
+  buatResep,
+  hapusResep,
   SESI_HABIS,
   ubahProduk,
+  ubahTakaran,
+  type Bahan,
+  type BarisResep,
   type Kategori,
   type Produk,
 } from './api'
 import { rupiah } from './format'
+import PanelResep from './PanelResep'
 
 /**
  * Menu: kategori & produk. Owner saja (`role:owner` di Catalog).
@@ -27,9 +35,13 @@ import { rupiah } from './format'
 export default function LayarMenu({ onKeluar }: { onKeluar: () => void }) {
   const [kategori, setKategori] = useState<Kategori[] | null>(null)
   const [produk, setProduk] = useState<Produk[] | null>(null)
+  const [bahan, setBahan] = useState<Bahan[]>([])
+  const [resep, setResep] = useState<BarisResep[] | null>(null)
   const [galat, setGalat] = useState<string | null>(null)
   const [sibuk, setSibuk] = useState(false)
   const [versi, setVersi] = useState(0)
+  /** Produk yang panel resepnya sedang terbuka — satu saja, `null` kalau tak ada. */
+  const [resepDibuka, setResepDibuka] = useState<string | null>(null)
 
   const [namaKategori, setNamaKategori] = useState('')
   const [namaProduk, setNamaProduk] = useState('')
@@ -43,13 +55,19 @@ export default function LayarMenu({ onKeluar }: { onKeluar: () => void }) {
     let batal = false
     setSibuk(true)
 
-    // Paralel: dua daftar yang tak saling bergantung, dan owner menunggu
-    // keduanya sebelum layar berarti apa-apa.
-    Promise.all([ambilKategori(), ambilProduk()])
-      .then(([k, p]) => {
+    // Paralel: empat daftar yang tak saling bergantung, dan owner menunggu
+    // semuanya sebelum layar berarti apa-apa.
+    //
+    // Resep diambil SEKALIGUS untuk semua produk, bukan per produk saat panelnya
+    // dibuka: yang paling berguna di layar ini justru penandaan produk mana yang
+    // belum punya resep, dan itu mustahil dijawab tanpa melihat semuanya.
+    Promise.all([ambilKategori(), ambilProduk(), ambilBahan(), ambilResep()])
+      .then(([k, p, b, r]) => {
         if (batal) return
         setKategori(k)
         setProduk(p)
+        setBahan(b)
+        setResep(r)
         setGalat(null)
       })
       .catch((err: unknown) => {
@@ -130,6 +148,9 @@ export default function LayarMenu({ onKeluar }: { onKeluar: () => void }) {
     id === null ? null : (kategori?.find((k) => k.id === id)?.nama ?? null)
 
   const belumAdaKategori = kategori !== null && kategori.length === 0
+
+  const resepUntuk = (produkId: string): BarisResep[] =>
+    resep?.filter((r) => r.produkId === produkId) ?? []
 
   return (
     <div className="min-h-svh bg-slate-50 text-slate-900">
@@ -271,6 +292,10 @@ export default function LayarMenu({ onKeluar }: { onKeluar: () => void }) {
           <ul className="mt-2 space-y-2">
             {produk?.map((p) => {
               const namaKat = namaKategoriDari(p.kategoriId)
+              const barisResep = resepUntuk(p.id)
+              // Selama resep belum termuat, JANGAN menuduh apa pun: `resep`
+              // masih null berarti belum tahu, bukan "tak punya".
+              const tanpaResep = resep !== null && barisResep.length === 0
 
               return (
                 <li key={p.id} className="rounded-md border border-slate-200 bg-white p-3">
@@ -314,8 +339,39 @@ export default function LayarMenu({ onKeluar }: { onKeluar: () => void }) {
                   >
                     {p.tersedia ? 'Habiskan (sembunyikan)' : 'Sediakan lagi'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setResepDibuka((kini) => (kini === p.id ? null : p.id))}
+                    aria-label={`Resep ${p.nama}`}
+                    aria-expanded={resepDibuka === p.id}
+                    className="ml-2 rounded-md border border-slate-300 px-3 py-1.5 text-xs"
+                  >
+                    Resep{barisResep.length > 0 && ` (${barisResep.length})`}
+                  </button>
                   {!p.tersedia && (
                     <span className="ml-2 text-xs font-semibold text-slate-600">Sedang habis</span>
+                  )}
+
+                  {/* Sepola penanda "tanpa kategori" di atas: kerusakannya sunyi,
+                      jadi yang menyebutkannya harus barisnya sendiri. Produk tanpa
+                      resep lolos gerbang stok tanpa pemeriksaan apa pun — pelanggan
+                      tetap bisa membayar kopi yang bijinya sudah habis. */}
+                  {tanpaResep && (
+                    <p className="mt-1 text-xs font-semibold text-amber-800">
+                      Tanpa resep · stoknya tak pernah diperiksa
+                    </p>
+                  )}
+
+                  {resepDibuka === p.id && (
+                    <PanelResep
+                      namaProduk={p.nama}
+                      baris={barisResep}
+                      bahan={bahan}
+                      sibuk={sibuk}
+                      onTambah={(bahanId, takaran) => jalankan(buatResep(p.id, bahanId, takaran))}
+                      onUbah={(id, takaran) => jalankan(ubahTakaran(id, takaran))}
+                      onHapus={(id) => jalankan(hapusResep(id))}
+                    />
                   )}
                 </li>
               )
