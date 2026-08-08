@@ -5,10 +5,12 @@ import LayarAntrean from './LayarAntrean'
 import LayarDapur from './LayarDapur'
 import LayarLogin from './LayarLogin'
 import LayarMeja from './LayarMeja'
+import LayarMenu from './LayarMenu'
 import LayarNota from './LayarNota'
 import LayarNotifikasi from './LayarNotifikasi'
 import LayarRiwayat from './LayarRiwayat'
 import LayarSetelan from './LayarSetelan'
+import LayarShift from './LayarShift'
 import LayarStok from './LayarStok'
 
 /**
@@ -61,11 +63,18 @@ export default function App() {
               dibedakan bukan siapa boleh melihat, melainkan siapa boleh
               mengubah — dan mengubah tak ada di layar ini sama sekali. */}
           <Route path="/stok" element={<LayarStok onKeluar={keluar} />} />
+          {/* Kasir DAN owner (`role:cashier,owner` di Finance): yang membuka
+              laci pagi dan menutupnya sore justru kasir, bukan pemilik. */}
+          <Route path="/shift" element={<LayarShift onKeluar={keluar} />} />
           {/* Tak dijaga di sini: penjaganya `role:owner` di Ordering, dan
               kasir yang memaksa alamat ini melihat form kosong dengan pesan
               403 — bukan setelan outlet. Menambahkan penjaga kedua di layar
               berarti dua tempat memutuskan hal yang sama, dan yang di sini
               justru yang paling mudah dibohongi. */}
+          {/* Sama seperti /setelan & /meja: penjaganya `role:owner` di Catalog,
+              bukan di sini. Kasir yang memaksa alamat ini melihat pesan galat,
+              bukan menu yang bisa diubahnya. */}
+          <Route path="/menu" element={<LayarMenu onKeluar={keluar} />} />
           <Route path="/setelan" element={<LayarSetelan onKeluar={keluar} />} />
           {/* Sama seperti /setelan: penjaganya `role:owner` di Ordering, bukan
               di sini. */}

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AvailabilityController;
 use App\Http\Controllers\StockController;
 use Illuminate\Support\Facades\Route;
 
@@ -7,6 +8,11 @@ use Illuminate\Support\Facades\Route;
 Route::get('ping', fn () => response()->json(['service' => 'inventory', 'status' => 'ok']));
 
 // Lihat saldo stok: kasir & owner (kasir butuh tahu stok, tak boleh mengubah). RBAC.md.
+// Gerbang stok untuk Ordering (service-to-service, auth X-Service-Token).
+// Bentuk TUNGGAL `availability` menandai endpoint mesin, sepola `recipe` dan
+// `ingredient` di Catalog. Tak ada JWT: yang memesan adalah pelanggan tanpa akun.
+Route::post('availability', AvailabilityController::class)->middleware(['service', 'throttle:120,1']);
+
 Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
     Route::get('stock', [StockController::class, 'index']);
 });

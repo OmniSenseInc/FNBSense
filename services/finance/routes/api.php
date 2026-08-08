@@ -12,6 +12,11 @@ Route::get('ping', fn () => response()->json(['service' => 'finance', 'status' =
 Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
     Route::post('shifts/open', [ShiftController::class, 'open']);
     Route::post('shifts/{id}/close', [ShiftController::class, 'close']);
+    // WAJIB di atas `shifts/{id}`: kalau di bawah, "current" ditelan sebagai id
+    // dan balasannya selalu 404. Tanpa rute ini shift yang id-nya hilang (ganti
+    // device, browser di-clear) tak bisa ditutup selamanya — dan `open_key`
+    // unik per outlet bikin shift baru selalu 409. Kas outlet macet permanen.
+    Route::get('shifts/current', [ShiftController::class, 'current']);
     Route::get('shifts/{id}', [ShiftController::class, 'show']);
 
     // Pengeluaran (F5d): kasir di kasir yang belanja → boleh catat & lihat.

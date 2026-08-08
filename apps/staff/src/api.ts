@@ -16,6 +16,8 @@ const IAM = import.meta.env.VITE_IAM_URL
 const ORDERING = import.meta.env.VITE_ORDERING_URL
 const NOTIFICATION = import.meta.env.VITE_NOTIFICATION_URL
 const INVENTORY = import.meta.env.VITE_INVENTORY_URL
+const FINANCE = import.meta.env.VITE_FINANCE_URL
+const CATALOG = import.meta.env.VITE_CATALOG_URL
 
 /**
  * Token disimpan di localStorage, bukan memori, supaya kasir yang tak sengaja
@@ -208,7 +210,20 @@ async function mintaJson(
         : 'Ada isian yang ditolak server. Periksa lagi angkanya.',
     )
   }
-  if (res.status === 409) throw new Error('Pesanan sudah tidak bisa diproses. Antrean diperbarui.')
+  // 409 = bentrok keadaan, dan keadaan yang bentrok belum tentu pesanan: shift
+  // yang sudah terbuka, shift yang sudah ditutup. Kalimat server dipakai apa
+  // adanya karena SEMUA 409 di sistem ini ditulis tangan dalam bahasa manusia
+  // (dicek: CashierOrderController, OrderController, ShiftController) — beda
+  // dari 404 yang datang dari `firstOrFail` dan berbunyi "No query results for
+  // model [...]", kalimat yang tak menolong siapa pun di balik meja kasir.
+  if (res.status === 409) {
+    const json = await jsonDari(res)
+    throw new Error(
+      typeof json.message === 'string' && json.message !== ''
+        ? json.message
+        : 'Sudah tidak bisa diproses. Muat ulang layarnya.',
+    )
+  }
   if (res.status === 404) throw new Error('Pesanan tidak ditemukan di outlet ini.')
   if (!res.ok) throw new Error('Gagal menghubungi server. Coba lagi.')
 
@@ -803,6 +818,255 @@ export async function ambilStok(): Promise<Stok[]> {
   const data = await panggil<Record<string, unknown>[]>('/api/stock', undefined, INVENTORY)
 
   return (Array.isArray(data) ? data : []).map(petakanStok)
+}
+
+/**
+ * Barang masuk. `qty` DITAMBAHKAN ke saldo, bukan menggantikannya.
+ *
+ * Tak mengembalikan apa pun: balasan server adalah model mentah
+ * `stock_balances` (bukan daftar-izin seperti /api/stock), jadi memetakannya di
+ * sini berarti menyalin bentuk yang sengaja tak dijanjikan ke layar. Pemanggil
+ * memuat ulang daftarnya — satu permintaan tambahan, nol tebakan.
+ */
+export async function restokBahan(ingredientId: string, qty: number): Promise<void> {
+  await mintaJson(
+    '/api/stock/restock',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ingredient_id: ingredientId, qty }),
+    },
+    INVENTORY,
+  )
+}
+
+/**
+ * Opname: hasil hitung fisik. Angka ini MENGGANTIKAN saldo, dan selisihnya
+ * dicatat server sebagai gerakan tersendiri — jadi kesalahan ketik di sini
+ * bukan cuma mengubah angka, ia menulis satu baris riwayat yang salah.
+ */
+export async function opnameBahan(ingredientId: string, hasilHitung: number): Promise<void> {
+  await mintaJson(
+    '/api/stock/adjust',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ingredient_id: ingredientId, counted_qty: hasilHitung }),
+    },
+    INVENTORY,
+  )
+}
+
+/**
+ * Laporan satu shift. X-report selama shift berjalan (berubah tiap penjualan),
+ * Z-report begitu ditutup (beku).
+ *
+ * `kasDihitung` dan `selisih` null selama shift belum ditutup — belum ada yang
+ * menghitung isi laci, dan menampilkan 0 di situ berarti memberi tahu kasir
+ * bahwa lacinya kosong.
+ */
+export type LaporanShift = {
+  totalPenjualan: number
+  transaksi: number
+  tunai: number
+  qris: number
+  modalAwal: number
+  /** modalAwal + tunai. QRIS tak menyentuh laci, jadi tak ikut. */
+  kasSeharusnya: number
+  kasDihitung: number | null
+  /** kasDihitung - kasSeharusnya. Boleh minus: itu justru angka yang dicari. */
+  selisih: number | null
+}
+
+export type Shift = {
+  id: string
+  /** `open` | `closed` apa adanya dari server. */
+  status: string
+  modalAwal: number
+  dibukaPada: string | null
+  ditutupPada: string | null
+  laporan: LaporanShift | null
+}
+
+function petakanLaporan(m: Record<string, unknown>): LaporanShift {
+  const dihitung = keAngka(m.counted_cash)
+  const selisih = keAngka(m.cash_variance)
+
+  return {
+    totalPenjualan: keAngka(m.total_sales),
+    transaksi: keAngka(m.transactions),
+    tunai: keAngka(m.cash_sales),
+    qris: keAngka(m.qris_sales),
+    modalAwal: keAngka(m.opening_cash),
+    kasSeharusnya: keAngka(m.expected_cash),
+    // null server (shift masih buka) dan angka rusak sama-sama jadi null di
+    // sini: dua-duanya berarti "belum ada jawabannya", dan rupiah() sudah
+    // menolak menampilkan NaN sebagai angka.
+    kasDihitung: Number.isNaN(dihitung) ? null : dihitung,
+    selisih: Number.isNaN(selisih) ? null : selisih,
+  }
+}
+
+export function petakanShift(m: Record<string, unknown>): Shift {
+  const laporan = m.report
+
+  return {
+    id: String(m.id ?? ''),
+    status: typeof m.status === 'string' ? m.status : '',
+    modalAwal: keAngka(m.opening_cash),
+    dibukaPada: typeof m.opened_at === 'string' ? m.opened_at : null,
+    ditutupPada: typeof m.closed_at === 'string' ? m.closed_at : null,
+    laporan:
+      laporan !== null && typeof laporan === 'object'
+        ? petakanLaporan(laporan as Record<string, unknown>)
+        : null,
+  }
+}
+
+/**
+ * Shift yang sedang terbuka di outlet ini, atau null.
+ *
+ * Ditanyakan ke SERVER, tak pernah disimpan di perangkat: shift dibuka kasir
+ * pagi dan ditutup kasir sore, sering di tablet yang berbeda. Id yang tinggal
+ * di localStorage satu perangkat berarti shift yang tak bisa ditutup dari
+ * perangkat lain — dan karena satu outlet cuma boleh punya satu shift terbuka,
+ * kas outletnya macet sampai ada yang membuka database.
+ */
+export async function ambilShiftBerjalan(): Promise<Shift | null> {
+  const data = await panggil<Record<string, unknown> | null>('/api/shifts/current', undefined, FINANCE)
+
+  return data === null || typeof data !== 'object' ? null : petakanShift(data)
+}
+
+export async function bukaShift(modalAwal: number): Promise<Shift> {
+  const data = await panggil<Record<string, unknown>>(
+    '/api/shifts/open',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opening_cash: modalAwal }),
+    },
+    FINANCE,
+  )
+
+  return petakanShift(data)
+}
+
+export async function tutupShift(id: string, kasDihitung: number): Promise<Shift> {
+  const data = await panggil<Record<string, unknown>>(
+    `/api/shifts/${encodeURIComponent(id)}/close`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ closing_cash: kasDihitung }),
+    },
+    FINANCE,
+  )
+
+  return petakanShift(data)
+}
+
+export type Kategori = {
+  id: string
+  nama: string
+  aktif: boolean
+}
+
+export type Produk = {
+  id: string
+  nama: string
+  harga: number
+  kategoriId: string | null
+  tersedia: boolean
+}
+
+export function petakanKategori(m: Record<string, unknown>): Kategori {
+  return {
+    id: String(m.id ?? ''),
+    nama: typeof m.name === 'string' ? m.name : '',
+    // Kategori nonaktif menyembunyikan SELURUH produk di dalamnya dari menu
+    // pelanggan, jadi keadaannya harus terbaca di layar owner — bukan cuma
+    // dipakai untuk mengurutkan.
+    aktif: m.is_active !== false && m.is_active !== 0,
+  }
+}
+
+export function petakanProduk(m: Record<string, unknown>): Produk {
+  return {
+    id: String(m.id ?? ''),
+    nama: typeof m.name === 'string' ? m.name : '',
+    // NaN, bukan 0: harga yang tak terbaca lalu tampil sebagai Rp 0 adalah
+    // harga yang benar-benar akan ditagihkan kalau owner tak sadar.
+    harga: keAngka(m.price),
+    kategoriId: typeof m.category_id === 'string' && m.category_id !== '' ? m.category_id : null,
+    tersedia: m.is_available !== false && m.is_available !== 0,
+  }
+}
+
+export async function ambilKategori(): Promise<Kategori[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/categories', undefined, CATALOG)
+
+  return (Array.isArray(data) ? data : []).map(petakanKategori)
+}
+
+export async function buatKategori(nama: string): Promise<void> {
+  await mintaJson(
+    '/api/categories',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nama }),
+    },
+    CATALOG,
+  )
+}
+
+export async function ambilProduk(): Promise<Produk[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/products', undefined, CATALOG)
+
+  return (Array.isArray(data) ? data : []).map(petakanProduk)
+}
+
+/**
+ * `kategoriId` WAJIB di sini walau server masih menerima null.
+ *
+ * Produk tanpa kategori tak pernah muncul di menu pelanggan — MenuController
+ * hanya menelusuri produk lewat kategori aktif. Kerusakannya sunyi total: owner
+ * membuat produk, produknya tak pernah tampil, tak ada pesan apa pun. Tipe yang
+ * menolak null di sini adalah pagar pertama; pagar sungguhannya nanti di
+ * StoreProductRequest (lihat catatan tindak lanjut).
+ */
+export async function buatProduk(nama: string, harga: number, kategoriId: string): Promise<void> {
+  await mintaJson(
+    '/api/products',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nama, price: harga, category_id: kategoriId }),
+    },
+    CATALOG,
+  )
+}
+
+/** Hanya yang disebut yang dikirim — server memakai `sometimes`. */
+export async function ubahProduk(
+  id: string,
+  ubah: { harga?: number; tersedia?: boolean; kategoriId?: string },
+): Promise<void> {
+  const badan: Record<string, unknown> = {}
+  if (ubah.harga !== undefined) badan.price = ubah.harga
+  if (ubah.tersedia !== undefined) badan.is_available = ubah.tersedia
+  if (ubah.kategoriId !== undefined) badan.category_id = ubah.kategoriId
+
+  await mintaJson(
+    `/api/products/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(badan),
+    },
+    CATALOG,
+  )
 }
 
 export function peranSaya(): string | null {

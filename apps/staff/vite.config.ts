@@ -46,6 +46,21 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (jalur) => jalur.replace(/^\/inventory/, ''),
       },
+      // Menu (kategori & produk), owner-only. Catatan lama di kepala berkas
+      // ini benar untuk KASIR — dan gugur begitu owner ikut memakai app yang
+      // sama: dialah yang menyusun menu, bukan yang menerima uang.
+      '/catalog': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        rewrite: (jalur) => jalur.replace(/^\/catalog/, ''),
+      },
+      // Shift kasir: buka/tutup laci + laporan X/Z. Service kelima yang
+      // disentuh app ini, dan yang pertama menyentuh uang tunai.
+      '/finance': {
+        target: 'http://127.0.0.1:8004',
+        changeOrigin: true,
+        rewrite: (jalur) => jalur.replace(/^\/finance/, ''),
+      },
     },
   },
 })

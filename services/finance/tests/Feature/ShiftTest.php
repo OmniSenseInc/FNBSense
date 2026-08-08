@@ -165,6 +165,63 @@ class ShiftTest extends TestCase
             ->assertJsonPath('data.report.transactions', 1);
     }
 
+    /**
+     * `GET /shifts/current` — satu-satunya cara menemukan shift terbuka tanpa
+     * menyimpan id di sisi klien. Belum ada shift = keadaan normal, bukan error.
+     */
+    public function test_current_null_saat_belum_ada_shift(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+
+        $this->getJson('/api/shifts/current', $this->authHeaders($tenant, $outlet, 'cashier'))
+            ->assertOk()
+            ->assertJsonPath('data', null);
+    }
+
+    /** Shift terbuka ikut membawa X-report berjalan (belum ada counted/variance). */
+    public function test_current_kembalikan_shift_terbuka_dengan_x_report(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+
+        $shift = Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 100000, 'opened_at' => now()->subHours(2),
+            'status' => 'open', 'open_key' => $outlet,
+        ]);
+        $this->sale($tenant, $outlet, 50000, 'cash', now()->subHour()->toDateTimeString());
+
+        $this->getJson('/api/shifts/current', $this->authHeaders($tenant, $outlet, 'cashier'))
+            ->assertOk()
+            ->assertJsonPath('data.id', $shift->id)
+            ->assertJsonPath('data.status', 'open')
+            ->assertJsonPath('data.report.cash_sales', 50000)
+            ->assertJsonPath('data.report.expected_cash', 150000)
+            ->assertJsonPath('data.report.counted_cash', null)
+            ->assertJsonPath('data.report.cash_variance', null);
+    }
+
+    /** Shift yang sudah ditutup BUKAN current — kalau bocor, tombol tutup muncul lagi. */
+    public function test_current_abaikan_shift_yang_sudah_ditutup(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+        $h = $this->authHeaders($tenant, $outlet, 'cashier');
+        $id = $this->postJson('/api/shifts/open', ['opening_cash' => 100000], $h)->json('data.id');
+        $this->postJson("/api/shifts/{$id}/close", ['closing_cash' => 100000], $h)->assertOk();
+
+        $this->getJson('/api/shifts/current', $h)->assertOk()->assertJsonPath('data', null);
+    }
+
+    /** Shift outlet lain tak boleh bocor lewat pintu yang tak menyebut id. */
+    public function test_current_terisolasi_per_outlet(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+        $this->postJson('/api/shifts/open', ['opening_cash' => 100000], $this->authHeaders($tenant, $outlet, 'cashier'))->assertCreated();
+
+        $this->getJson('/api/shifts/current', $this->authHeaders($tenant, (string) Str::uuid(), 'cashier'))
+            ->assertOk()
+            ->assertJsonPath('data', null);
+    }
+
     /** Isolasi: shift milik outlet lain → 404 (bukan bocor/ubah). */
     public function test_isolasi_outlet(): void
     {

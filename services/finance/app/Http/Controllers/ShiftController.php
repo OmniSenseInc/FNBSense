@@ -69,6 +69,25 @@ class ShiftController extends Controller
         });
     }
 
+    /**
+     * Shift yang sedang terbuka di outlet ini, atau `data: null`.
+     *
+     * Sumber kebenarannya server, bukan localStorage: kasir berikutnya sering
+     * memakai device lain, dan shift terbuka harus bisa ditutup oleh siapa pun
+     * yang memegang laci. 200 + null (bukan 404) karena "belum ada shift" itu
+     * keadaan normal pagi hari, bukan kesalahan.
+     */
+    public function current(Request $request): JsonResponse
+    {
+        $shift = Shift::query()
+            ->where('tenant_id', $this->tenantId($request))
+            ->where('outlet_id', $this->outletId($request))
+            ->where('status', ShiftStatus::Open)
+            ->first();
+
+        return response()->json(['data' => $shift === null ? null : $this->present($shift, withReport: true)]);
+    }
+
     public function show(Request $request, string $id): JsonResponse
     {
         $shift = $this->findScoped($request, $id);

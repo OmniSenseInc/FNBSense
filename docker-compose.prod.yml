@@ -7,10 +7,14 @@
 # Redis, dan dasbor Traefik yang terbuka ke dunia di berkas dev itu mustahil
 # ditutup dari sini. Satu-satunya cara menutupnya adalah tidak mewarisinya.
 #
-# Yang SENGAJA belum ada di sini (F6/F7 dan realtime): finance, reporting,
-# dashboard, realtime. Empat-empatnya sudah jadi dan berjalan, tapi kafe bisa
-# berjualan tanpa mereka — dan tiap container tambahan adalah satu lagi yang
-# harus benar sebelum pelanggan pertama bisa memesan.
+# Yang SENGAJA belum ada di sini (F6/F7 dan realtime): reporting, dashboard,
+# realtime. Ketiganya sudah jadi dan berjalan, tapi kafe bisa berjualan tanpa
+# mereka — dan tiap container tambahan adalah satu lagi yang harus benar
+# sebelum pelanggan pertama bisa memesan.
+#
+# Finance dulu ada di daftar itu, dan keluar 2026-08-08: begitu kasir punya
+# layar /shift, "kafe bisa berjualan tanpanya" berhenti benar — tanpa Finance
+# tak ada yang membuka atau menutup laci.
 
 networks:
   fnbsense:
@@ -294,6 +298,18 @@ services:
       - "traefik.http.routers.catalog.tls.certresolver=le"
       - "traefik.http.routers.catalog.middlewares=catalog-strip"
       - "traefik.http.middlewares.catalog-strip.stripprefix.prefixes=/catalog"
+      # Rute KEDUA, domain staf — layar /menu owner (2026-08-08). Sebelum ini
+      # Catalog hanya bisa dijangkau dari domain pelanggan, jadi app staf yang
+      # memanggil /catalog akan dibalas 404 oleh router app-staf.
+      #
+      # Pengecualian jalur mesinnya disalin PERSIS, bukan disederhanakan:
+      # `recipe`/`ingredient`/`internal` dijaga token service dan tak ada
+      # urusannya dengan browser mana pun — domain staf sama terbukanya ke
+      # internet dengan domain pelanggan.
+      - "traefik.http.routers.catalog-staf.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/catalog`) && !Path(`/catalog/api/recipe`) && !Path(`/catalog/api/ingredient`) && !PathPrefix(`/catalog/api/internal`)"
+      - "traefik.http.routers.catalog-staf.entrypoints=websecure"
+      - "traefik.http.routers.catalog-staf.tls.certresolver=le"
+      - "traefik.http.routers.catalog-staf.middlewares=catalog-strip"
     networks: [fnbsense]
 
   ordering:
@@ -319,6 +335,11 @@ services:
       CATALOG_BASE_URL: http://catalog:8080
       CATALOG_TIMEOUT: "3"
       CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN}
+      # Gerbang stok: Ordering bertanya ke Inventory sebelum order dibuat.
+      # Alasan alamat internal sama persis dengan CATALOG_BASE_URL di atas.
+      INVENTORY_BASE_URL: http://inventory:8080
+      INVENTORY_TIMEOUT: "3"
+      INVENTORY_SERVICE_TOKEN: ${INVENTORY_SERVICE_TOKEN}
       PROMOTIONS_ENABLED: "true"
     # Bukan *keys seperti yang lain: SATU-SATUNYA service yang menerima unggahan
     # berkas, jadi ia butuh tempat menyimpan yang hidup lebih lama daripada
@@ -366,6 +387,9 @@ services:
       CATALOG_BASE_URL: http://catalog:8080
       CATALOG_TIMEOUT: "3"
       CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN}
+      # Secret yang DITERIMA Inventory dari Ordering (gerbang stok). Beda dari
+      # CATALOG_SERVICE_TOKEN di atas: yang itu dikirim keluar.
+      INVENTORY_SERVICE_TOKEN: ${INVENTORY_SERVICE_TOKEN:?INVENTORY_SERVICE_TOKEN wajib diisi}
     volumes: *keys
     depends_on: *depends
     labels:
@@ -419,6 +443,43 @@ services:
       - "traefik.http.routers.notification.tls.certresolver=le"
       - "traefik.http.routers.notification.middlewares=notification-strip"
       - "traefik.http.middlewares.notification-strip.stripprefix.prefixes=/notification"
+    networks: [fnbsense]
+
+  # Masuk 2026-08-08, bersamaan dengan layar /shift di app staf. Sebelum itu ia
+  # sengaja ditinggal (lihat catatan di kepala berkas) — alasannya gugur begitu
+  # kasir punya tombol buka/tutup laci: tanpa service ini, /shift 404 dan tak
+  # ada serah-terima kas antar-shift sama sekali.
+  finance:
+    build:
+      <<: *laravel-build
+      context: ./services/finance
+    container_name: fnbsense-finance
+    restart: unless-stopped
+    environment: &finance-env
+      <<: *laravel-env
+      APP_NAME: "FNBSense Finance"
+      APP_KEY: ${APP_KEY_FINANCE:?APP_KEY_FINANCE wajib diisi}
+      APP_URL: https://${DOMAIN_STAFF}/finance
+      DB_DATABASE: fnbsense_finance
+      SESSION_DRIVER: array
+      # Finance hanya MEMVERIFIKASI token terbitan IAM, tak pernah menerbitkan —
+      # jadi kedua variabel menunjuk kunci PUBLIK, sepola inventory di atas.
+      JWT_ALGO: RS256
+      JWT_PRIVATE_KEY: file:///keys/jwt-public.pem
+      JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
+      JWT_BLACKLIST_ENABLED: "false"
+    volumes: *keys
+    depends_on: *depends
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.finance.loadbalancer.server.port=8080"
+      # Domain STAF saja. Laci kasir bukan urusan orang yang memesan kopi.
+      - "traefik.http.routers.finance.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/finance`)"
+      - "traefik.http.routers.finance.entrypoints=websecure"
+      - "traefik.http.routers.finance.tls.certresolver=le"
+      - "traefik.http.routers.finance.middlewares=finance-strip"
+      - "traefik.http.middlewares.finance-strip.stripprefix.prefixes=/finance"
     networks: [fnbsense]
 
   # -------------------------------------------------------------------------
@@ -483,6 +544,23 @@ services:
     healthcheck: *tanpa-healthcheck
     networks: [fnbsense]
 
+  # Tanpa daemon ini tabel `sales` tak pernah terisi, dan itu gagal DIAM-DIAM:
+  # layar shift tetap terbuka, laporannya tetap tampil, cuma semua angkanya nol.
+  # Kasir menutup laci berisi uang sehari penuh dan diberi tahu bahwa selisihnya
+  # plus sebesar itu — laporan yang lebih buruk daripada tak ada laporan.
+  finance-consume:
+    build:
+      <<: *laravel-build
+      context: ./services/finance
+    container_name: fnbsense-finance-consume
+    restart: unless-stopped
+    command: ["php", "artisan", "finance:consume"]
+    environment: *finance-env
+    volumes: *keys
+    depends_on: *depends
+    healthcheck: *tanpa-healthcheck
+    networks: [fnbsense]
+
   # -------------------------------------------------------------------------
   # App frontend — berkas statis di belakang nginx.
   #
@@ -517,6 +595,8 @@ services:
         VITE_ORDERING_URL: /ordering
         VITE_NOTIFICATION_URL: /notification
         VITE_INVENTORY_URL: /inventory
+        VITE_FINANCE_URL: /finance
+        VITE_CATALOG_URL: /catalog
         # URL PENUH, satu-satunya di sini — nilainya berakhir di dalam QR yang
         # dicetak dan ditempel di meja, dan yang memindainya adalah HP orang
         # lain. Alamat relatif di sini menghasilkan QR yang menunjuk ke domain

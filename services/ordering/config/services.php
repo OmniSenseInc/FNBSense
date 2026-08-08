@@ -35,6 +35,19 @@ return [
         ],
     ],
 
+    // Service Inventory — gerbang stok sebelum order dibuat. Nilai
+    // service_token HARUS sama dengan INVENTORY_SERVICE_TOKEN di Inventory.
+    //
+    // Kosong = gerbangnya mati: Inventory membalas 401 dan klien fail-open,
+    // jadi pesanan tetap lewat. Itu SENGAJA (lihat InventoryClient), tapi
+    // artinya token yang lupa dipasang tak akan pernah terlihat dari layar —
+    // hanya dari baris WARNING di log.
+    'inventory' => [
+        'base_url' => env('INVENTORY_BASE_URL', 'http://127.0.0.1:8003'),
+        'timeout' => (int) env('INVENTORY_TIMEOUT', 3),
+        'service_token' => env('INVENTORY_SERVICE_TOKEN'),
+    ],
+
     // Service Catalog — sumber harga & ketersediaan produk. Ordering memanggil
     // langsung ke port service-nya (bukan lewat gateway) untuk snapshot harga.
     'catalog' => [

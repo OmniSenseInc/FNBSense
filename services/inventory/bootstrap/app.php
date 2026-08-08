@@ -30,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'jwt' => \App\Http\Middleware\AuthenticateJwt::class,
             'role' => \App\Http\Middleware\EnsureRole::class,
+            'service' => \App\Http\Middleware\AuthenticateServiceToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

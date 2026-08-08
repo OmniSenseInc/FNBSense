@@ -10,6 +10,7 @@ use App\Models\OrderItem;
 use App\Models\OrderSetting;
 use App\Models\Table;
 use App\Services\CatalogClient;
+use App\Services\InventoryClient;
 use App\Services\OrderCalculator;
 use App\Services\OrderNumberGenerator;
 use App\Services\PromotionClient;
@@ -60,6 +61,7 @@ class OrderController extends Controller
         StoreOrderRequest $request,
         CatalogClient $catalog,
         PromotionClient $promotions,
+        InventoryClient $inventory,
     ): JsonResponse {
         $data = $request->validated();
 
@@ -72,6 +74,31 @@ class OrderController extends Controller
 
         // Harga SELALU dari Catalog, tak pernah dari client. Catalog down -> 503.
         $products = $catalog->productsForTenant($table->tenant_id);
+
+        // Gerbang stok. Sebelum ini stok baru diperiksa saat `order.paid` —
+        // SESUDAH pelanggan membayar — sehingga bahan yang habis berakhir
+        // sebagai saldo negatif, kasir memegang uang, dan barangnya tak ada.
+        // Pembatalan sesudah PAID pun tak tersedia (PAID terminal).
+        //
+        // Ditaruh SEBELUM promo & kalkulator dengan sengaja: menghitung diskon
+        // untuk pesanan yang akan ditolak cuma membakar satu panggilan ke
+        // Catalog dan membuat log promo berisi pesanan yang tak pernah ada.
+        $habis = $inventory->unavailableProducts(
+            $table->tenant_id,
+            $table->outlet_id,
+            $data['items'],
+        );
+
+        if ($habis !== []) {
+            // Namanya disebut, bukan id-nya: yang membaca pesan ini adalah orang
+            // yang sedang duduk di meja, bukan yang membangun sistemnya.
+            $nama = array_map(
+                fn (string $id) => $products[$id]['name'] ?? 'Produk',
+                $habis,
+            );
+
+            throw new HttpException(422, 'Bahan untuk '.implode(', ', $nama).' sedang habis. Silakan pilih menu lain.');
+        }
 
         // Tarif di-snapshot dari setting outlet; belum diset -> tarif 0 (bukan tebak).
         $setting = OrderSetting::query()

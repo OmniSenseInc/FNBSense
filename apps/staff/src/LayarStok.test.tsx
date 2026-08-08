@@ -4,11 +4,14 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { ambilStok } from './api'
+import { ambilStok, opnameBahan, peranSaya, restokBahan } from './api'
 import LayarStok from './LayarStok'
 
 vi.mock('./api', () => ({
   ambilStok: vi.fn(),
+  restokBahan: vi.fn(),
+  opnameBahan: vi.fn(),
+  peranSaya: vi.fn(),
   SESI_HABIS: 'SESI_HABIS',
 }))
 
@@ -145,6 +148,83 @@ describe('penanda menipis', () => {
 
     expect(await screen.findByText('—')).toBeTruthy()
     expect(screen.queryByText(/Menipis/)).toBeNull()
+  })
+})
+
+describe('mengubah stok', () => {
+  const owner = () => (peranSaya as Mock).mockReturnValue('owner')
+
+  it('kasir tak ditawari tombol yang pasti ditolak server', async () => {
+    ;(peranSaya as Mock).mockReturnValue('cashier')
+    ;(ambilStok as Mock).mockResolvedValue([stok()])
+
+    tampilkan()
+
+    await screen.findByText('Susu Full Cream')
+    expect(screen.queryByRole('button', { name: 'Barang masuk' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Opname' })).toBeNull()
+  })
+
+  it('barang masuk: mengirim qty lalu memuat saldo baru dari server', async () => {
+    owner()
+    ;(ambilStok as Mock)
+      .mockResolvedValueOnce([stok({ qty: 5000 })])
+      .mockResolvedValue([stok({ qty: 7000 })])
+    ;(restokBahan as Mock).mockResolvedValue(undefined)
+
+    tampilkan()
+    fireEvent.click(await screen.findByRole('button', { name: 'Barang masuk' }))
+    fireEvent.change(screen.getByLabelText(/Berapa yang masuk/), { target: { value: '2000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    await vi.waitFor(() =>
+      expect(restokBahan).toHaveBeenCalledWith('aaaa1111-bbbb-2222-cccc-333344445555', 2000),
+    )
+    // Saldo dibaca ULANG, bukan dihitung di layar.
+    expect(await screen.findByText('7000')).toBeTruthy()
+  })
+
+  it('opname mengirim hasil hitung fisik, bukan selisihnya', async () => {
+    // Server yang menghitung delta dan menulisnya ke ledger. Layar yang
+    // mengirim selisih akan menggeser saldo dua kali.
+    owner()
+    ;(ambilStok as Mock).mockResolvedValue([stok({ qty: 5000 })])
+    ;(opnameBahan as Mock).mockResolvedValue(undefined)
+
+    tampilkan()
+    fireEvent.click(await screen.findByRole('button', { name: 'Opname' }))
+    fireEvent.change(screen.getByLabelText(/Hasil hitung fisik/), { target: { value: '4850' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    await vi.waitFor(() =>
+      expect(opnameBahan).toHaveBeenCalledWith('aaaa1111-bbbb-2222-cccc-333344445555', 4850),
+    )
+  })
+
+  it('menerima desimal sungguhan', async () => {
+    owner()
+    ;(ambilStok as Mock).mockResolvedValue([stok()])
+    ;(restokBahan as Mock).mockResolvedValue(undefined)
+
+    tampilkan()
+    fireEvent.click(await screen.findByRole('button', { name: 'Barang masuk' }))
+    fireEvent.change(screen.getByLabelText(/Berapa yang masuk/), { target: { value: '1.5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    await vi.waitFor(() => expect(restokBahan).toHaveBeenCalledWith(expect.any(String), 1.5))
+  })
+
+  it('menolak "1.000" — pemisah ribuan yang dibaca JavaScript sebagai satu', async () => {
+    owner()
+    ;(ambilStok as Mock).mockResolvedValue([stok()])
+
+    tampilkan()
+    fireEvent.click(await screen.findByRole('button', { name: 'Opname' }))
+    fireEvent.change(screen.getByLabelText(/Hasil hitung fisik/), { target: { value: '1.000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(opnameBahan).not.toHaveBeenCalled()
   })
 })
 

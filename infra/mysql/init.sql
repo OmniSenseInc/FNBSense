@@ -12,6 +12,10 @@ CREATE DATABASE IF NOT EXISTS `fnbsense_catalog`      CHARACTER SET utf8mb4 COLL
 CREATE DATABASE IF NOT EXISTS `fnbsense_ordering`     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE IF NOT EXISTS `fnbsense_inventory`    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE IF NOT EXISTS `fnbsense_notification` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- Ditambah 2026-08-08 bersama layar /shift. Baca peringatan di atas: server
+-- yang volumenya SUDAH berisi tak akan menjalankan berkas ini lagi, jadi di
+-- sana jalankan CREATE DATABASE + GRANT ini sendiri sebelum `migrate`.
+CREATE DATABASE IF NOT EXISTS `fnbsense_finance`      CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Hak diberikan per database, TIDAK lewat pola `fnbsense_%`. Di MySQL, `_`
 -- adalah wildcard satu karakter dalam pola GRANT, jadi pola itu diam-diam juga
@@ -21,5 +25,6 @@ GRANT ALL PRIVILEGES ON `fnbsense_catalog`.*      TO 'fnbsense'@'%';
 GRANT ALL PRIVILEGES ON `fnbsense_ordering`.*     TO 'fnbsense'@'%';
 GRANT ALL PRIVILEGES ON `fnbsense_inventory`.*    TO 'fnbsense'@'%';
 GRANT ALL PRIVILEGES ON `fnbsense_notification`.* TO 'fnbsense'@'%';
+GRANT ALL PRIVILEGES ON `fnbsense_finance`.*      TO 'fnbsense'@'%';
 
 FLUSH PRIVILEGES;

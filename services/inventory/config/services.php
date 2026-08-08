@@ -35,6 +35,12 @@ return [
         ],
     ],
 
+    // Secret yang DITERIMA Inventory di header X-Service-Token (gerbang stok
+    // yang dipanggil Ordering). Sengaja BEDA dari catalog.service_token di
+    // bawah — yang itu dikirim keluar. Satu nilai untuk dua arah berarti
+    // bocornya token Catalog ikut membuka pintu masuk Inventory.
+    'internal_token' => env('INVENTORY_SERVICE_TOKEN'),
+
     // Catalog: sumber resep (BOM) buat potong stok (F4b). service_token dikirim
     // sbg X-Service-Token dan HARUS sama dgn CATALOG_SERVICE_TOKEN di Catalog.
     'catalog' => [
