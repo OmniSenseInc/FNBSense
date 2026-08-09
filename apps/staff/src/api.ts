@@ -1134,6 +1134,68 @@ export async function hapusBahan(id: string): Promise<void> {
   await mintaJson(`/api/ingredients/${encodeURIComponent(id)}`, { method: 'DELETE' }, CATALOG)
 }
 
+/**
+ * Karyawan satu tenant. Owner ikut di daftar — dia juga staff.
+ *
+ * IAM membalas ARRAY TELANJANG di `/api/staff`, tanpa bungkus `data`, jadi
+ * lewat mintaJson() langsung dan bukan panggil().
+ */
+export type Staf = {
+  id: string
+  nama: string
+  email: string
+  peran: string
+  aktif: boolean
+}
+
+export function petakanStaf(m: Record<string, unknown>): Staf {
+  return {
+    id: String(m.id ?? ''),
+    nama: typeof m.name === 'string' ? m.name : '',
+    email: typeof m.email === 'string' ? m.email : '',
+    peran: typeof m.role === 'string' ? m.role : '',
+    // === true, bukan Boolean(): medan yang hilang atau bertipe aneh harus
+    // terbaca sebagai NONAKTIF. Menampilkan akun mati sebagai aktif membuat
+    // owner mengira mantan karyawannya masih bisa masuk — dan tak memeriksanya.
+    aktif: m.is_active === true,
+  }
+}
+
+export async function ambilStaf(): Promise<Staf[]> {
+  const data: unknown = await mintaJson('/api/staff', undefined, IAM)
+
+  return Array.isArray(data) ? data.map(petakanStaf) : []
+}
+
+/**
+ * Buat akun kasir. Peran, tenant, dan outlet TIDAK dikirim — server mengisinya
+ * dari token owner, jadi layar ini secara struktural tak bisa membuat owner
+ * kedua betapa pun payload-nya dikarang.
+ */
+export async function buatKasir(nama: string, email: string, sandi: string): Promise<void> {
+  await mintaJson(
+    '/api/staff',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nama, email, password: sandi }),
+    },
+    IAM,
+  )
+}
+
+export async function ubahAktifStaf(id: string, aktif: boolean): Promise<void> {
+  await mintaJson(
+    `/api/staff/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: aktif }),
+    },
+    IAM,
+  )
+}
+
 /** Seluruh resep tenant sekaligus — pemanggilnya menyaring per produk. */
 export async function ambilResep(): Promise<BarisResep[]> {
   const data = await panggil<Record<string, unknown>[]>('/api/recipes', undefined, CATALOG)

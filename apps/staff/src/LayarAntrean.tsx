@@ -307,6 +307,9 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
               <Link to="/meja" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
                 Meja
               </Link>
+              <Link to="/staf" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+                Karyawan
+              </Link>
               <Link to="/setelan" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
                 Setelan
               </Link>

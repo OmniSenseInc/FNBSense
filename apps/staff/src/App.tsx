@@ -12,6 +12,7 @@ import LayarNotifikasi from './LayarNotifikasi'
 import LayarRiwayat from './LayarRiwayat'
 import LayarSetelan from './LayarSetelan'
 import LayarShift from './LayarShift'
+import LayarStaf from './LayarStaf'
 import LayarStok from './LayarStok'
 
 /**
@@ -81,6 +82,8 @@ export default function App() {
               seringnya diisi sekali di awal lalu ditinggal. Resep sebaliknya —
               ia tak berarti apa-apa tanpa produk yang dimilikinya. */}
           <Route path="/bahan" element={<LayarBahan onKeluar={keluar} />} />
+          {/* Sama seperti /menu & /bahan: penjaganya `role:owner` di IAM. */}
+          <Route path="/staf" element={<LayarStaf onKeluar={keluar} />} />
           <Route path="/setelan" element={<LayarSetelan onKeluar={keluar} />} />
           {/* Sama seperti /setelan: penjaganya `role:owner` di Ordering, bukan
               di sini. */}
