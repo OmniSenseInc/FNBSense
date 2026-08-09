@@ -274,6 +274,19 @@ services:
       JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
       JWT_BLACKLIST_ENABLED: "false"
       CATALOG_SERVICE_TOKEN: ${CATALOG_SERVICE_TOKEN:?CATALOG_SERVICE_TOKEN wajib diisi}
+      # Penanda "Habis" di menu pelanggan (2026-08-09): Catalog menanyakan saldo
+      # bahan ke Inventory, lalu membandingkannya sendiri dengan `recipes` lokal.
+      #
+      # Tanpa dua baris ini fiturnya MATI TANPA SUARA, bukan gagal berisik:
+      # bawaan config/services.php menunjuk 127.0.0.1:8003 yang di dalam
+      # container tak berisi apa pun, sambungannya gagal, dan jalur itu memang
+      # sengaja fail-open — menu tetap 200, cuma tanpa satu pun penanda. Persis
+      # begitu ia mati diam-diam di laptop sampai diuji lewat HTTP sungguhan.
+      INVENTORY_BASE_URL: http://inventory:8080
+      # Polos, bukan `:?`. Blok inventory di bawah yang mewajibkannya; kalau
+      # dituntut di dua tempat, satu-satunya yang bertambah adalah jumlah pesan
+      # galat untuk satu variabel yang sama.
+      INVENTORY_SERVICE_TOKEN: ${INVENTORY_SERVICE_TOKEN}
     volumes: *keys
     depends_on: *depends
     labels:
