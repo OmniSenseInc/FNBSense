@@ -9,8 +9,10 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use PHPOpenSourceSaver\JWTAuth\Exceptions\JWTException;
 use PHPOpenSourceSaver\JWTAuth\JWTGuard;
 
@@ -99,6 +101,46 @@ class AuthController extends Controller
         }
 
         return $this->respondWithToken($token, $user);
+    }
+
+    /**
+     * Ganti sandi sendiri.
+     *
+     * WAJIB menyebut sandi lama, meski pemanggilnya sudah memegang token yang
+     * sah. Tanpa syarat itu, token yang bocor — dicuri dari HP yang ditinggal
+     * terbuka di meja kasir — langsung jadi pengambilalihan akun permanen:
+     * pencurinya mengganti sandi, pemiliknya terkunci dari akunnya sendiri.
+     *
+     * BATAS YANG DIKETAHUI: token yang sudah terbit TIDAK ikut mati. Sistem ini
+     * belum punya denylist bersama (lihat SECURITY_TODO revocation), jadi sesi
+     * lama tetap hidup sampai TTL 15 menit habis. Mengganti sandi karena curiga
+     * akun dibajak harus dibarengi menunggu jendela itu lewat.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $user = $this->guard()->user();
+        if (! $user instanceof User || ! $this->hasActiveBusinessContext($user)) {
+            return response()->json(['message' => 'Konteks akun tidak aktif atau tidak valid.'], 403);
+        }
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+
+        // Dilempar sebagai galat validasi pada medan `current_password`, bukan
+        // 401. 401 di sini akan dibaca frontend sebagai "sesi habis" lalu
+        // memulangkan orangnya ke layar login, padahal tokennya baik-baik saja;
+        // yang salah cuma satu isian.
+        if (! Hash::check($validated['current_password'], (string) $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => 'Sandi saat ini salah.',
+            ]);
+        }
+
+        $user->update(['password' => $validated['password']]);
+
+        return response()->json(['message' => 'Sandi berhasil diganti.']);
     }
 
     /**

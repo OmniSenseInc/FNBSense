@@ -19,6 +19,13 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('logout', [AuthController::class, 'logout']);
+
+        // Ganti sandi sendiri. Rate limit sendiri, lebih ketat dari sekadar
+        // "sudah punya token": di baliknya ada Hash::check terhadap sandi lama,
+        // jadi endpoint ini adalah oracle untuk menebak sandi milik pemegang
+        // token yang dicuri — persis yang dilindungi throttle:login di atas.
+        Route::post('password', [AuthController::class, 'changePassword'])
+            ->middleware('throttle:6,1');
     });
 });
 

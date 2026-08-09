@@ -84,6 +84,11 @@ class StaffController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'is_active' => ['sometimes', 'boolean'],
+            // Reset sandi kasir yang lupa. TANPA sandi lama — owner memang tak
+            // tahu, dan itu seluruh gunanya. Sebelum medan ini ada, mengirim
+            // `password` ke sini membalas 200 tapi tak berbuat apa-apa sama
+            // sekali: ia tak lolos validasi, jadi tak pernah sampai ke update().
+            'password' => ['sometimes', Password::defaults()],
         ]);
 
         // Scope tenant dulu, baru cari id: staff tenant lain tak terbedakan
@@ -100,6 +105,17 @@ class StaffController extends Controller
         if (array_key_exists('is_active', $validated) && ! $validated['is_active'] && $staff->is($owner)) {
             throw ValidationException::withMessages([
                 'is_active' => 'Kamu tidak bisa menonaktifkan akunmu sendiri.',
+            ]);
+        }
+
+        // Pintu samping yang harus tertutup. Ganti sandi sendiri (POST
+        // /auth/password) sengaja menuntut sandi lama supaya token yang bocor
+        // tak bisa jadi pengambilalihan akun permanen. Kalau owner boleh
+        // mereset sandinya sendiri DI SINI, syarat itu jadi sia-sia: pemegang
+        // token curian cukup menembak akunnya sendiri lewat jalur staff.
+        if (array_key_exists('password', $validated) && $staff->is($owner)) {
+            throw ValidationException::withMessages([
+                'password' => 'Untuk mengganti sandimu sendiri, sebutkan sandi lamamu lewat ganti sandi.',
             ]);
         }
 
