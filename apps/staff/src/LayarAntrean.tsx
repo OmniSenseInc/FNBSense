@@ -315,6 +315,11 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
               </Link>
             </>
           )}
+          {/* DI LUAR blok owner: kasir justru yang paling butuh, karena
+              sandinya diketikkan orang lain saat akunnya dibuat. */}
+          <Link to="/sandi" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+            Ganti sandi
+          </Link>
           <button
             type="button"
             onClick={keluar}

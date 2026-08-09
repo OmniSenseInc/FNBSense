@@ -1184,6 +1184,43 @@ export async function buatKasir(nama: string, email: string, sandi: string): Pro
   )
 }
 
+/**
+ * Ganti sandi sendiri. Sandi lama WAJIB — server menuntutnya supaya token yang
+ * bocor tak bisa jadi pengambilalihan akun permanen.
+ *
+ * Sandi lama yang salah dibalas 422, dan mintaJson() sudah menerjemahkan itu
+ * jadi kalimat server apa adanya. Sengaja BUKAN 401: itu akan memulangkan
+ * orangnya ke layar login padahal sesinya baik-baik saja.
+ */
+export async function gantiSandi(lama: string, baru: string): Promise<void> {
+  await mintaJson(
+    '/api/auth/password',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        current_password: lama,
+        password: baru,
+        password_confirmation: baru,
+      }),
+    },
+    IAM,
+  )
+}
+
+/** Reset sandi kasir yang lupa — owner, tanpa menyebut sandi lama. */
+export async function resetSandiStaf(id: string, baru: string): Promise<void> {
+  await mintaJson(
+    `/api/staff/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: baru }),
+    },
+    IAM,
+  )
+}
+
 export async function ubahAktifStaf(id: string, aktif: boolean): Promise<void> {
   await mintaJson(
     `/api/staff/${encodeURIComponent(id)}`,

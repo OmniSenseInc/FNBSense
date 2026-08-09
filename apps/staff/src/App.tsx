@@ -12,6 +12,7 @@ import LayarNotifikasi from './LayarNotifikasi'
 import LayarRiwayat from './LayarRiwayat'
 import LayarSetelan from './LayarSetelan'
 import LayarShift from './LayarShift'
+import LayarSandi from './LayarSandi'
 import LayarStaf from './LayarStaf'
 import LayarStok from './LayarStok'
 
@@ -84,6 +85,11 @@ export default function App() {
           <Route path="/bahan" element={<LayarBahan onKeluar={keluar} />} />
           {/* Sama seperti /menu & /bahan: penjaganya `role:owner` di IAM. */}
           <Route path="/staf" element={<LayarStaf onKeluar={keluar} />} />
+          {/* SEMUA peran, tak seperti /staf di atas: mengganti sandi sendiri
+              bukan wewenang owner melainkan kebersihan akun masing-masing.
+              Kasir yang diberi sandi awal oleh owner harus bisa
+              mempensiunkannya. */}
+          <Route path="/sandi" element={<LayarSandi onKeluar={keluar} />} />
           <Route path="/setelan" element={<LayarSetelan onKeluar={keluar} />} />
           {/* Sama seperti /setelan: penjaganya `role:owner` di Ordering, bukan
               di sini. */}

@@ -2,12 +2,13 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { ambilStaf, buatKasir, ubahAktifStaf } from './api'
+import { ambilStaf, buatKasir, resetSandiStaf, ubahAktifStaf } from './api'
 import LayarStaf from './LayarStaf'
 
 vi.mock('./api', () => ({
   ambilStaf: vi.fn(),
   buatKasir: vi.fn(),
+  resetSandiStaf: vi.fn(),
   ubahAktifStaf: vi.fn(),
   SESI_HABIS: 'SESI_HABIS',
 }))
@@ -161,6 +162,57 @@ describe('daftar karyawan', () => {
 
     expect(screen.queryByRole('button', { name: /Vincent/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Nonaktifkan Rina' })).toBeTruthy()
+  })
+})
+
+describe('reset sandi kasir', () => {
+  it('form baru muncul setelah tombol reset diketuk', async () => {
+    ;(ambilStaf as Mock).mockResolvedValue([staf()])
+
+    tampilkan()
+    expect(screen.queryByLabelText(/Sandi baru untuk/)).toBeNull()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset sandi Rina' }))
+
+    expect(screen.getByLabelText('Sandi baru untuk Rina')).toBeTruthy()
+  })
+
+  it('mengirim sandi baru untuk staf yang benar', async () => {
+    ;(ambilStaf as Mock).mockResolvedValue([staf()])
+    ;(resetSandiStaf as Mock).mockResolvedValue(undefined)
+
+    tampilkan()
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset sandi Rina' }))
+    fireEvent.change(screen.getByLabelText('Sandi baru untuk Rina'), {
+      target: { value: 'Rahasia123' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    await vi.waitFor(() => expect(resetSandiStaf).toHaveBeenCalledWith('s1', 'Rahasia123'))
+  })
+
+  it('sandi kosong ditolak tanpa menghubungi server', async () => {
+    ;(ambilStaf as Mock).mockResolvedValue([staf()])
+
+    tampilkan()
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset sandi Rina' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(resetSandiStaf).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Server menolak owner mereset sandinya sendiri (422) supaya syarat "sebut
+   * sandi lama" tak bisa dilangkahi. Tombolnya pun tak boleh ada di sini.
+   */
+  it('baris pemilik tidak punya tombol reset sandi', async () => {
+    ;(ambilStaf as Mock).mockResolvedValue([staf({ id: 'o1', nama: 'Vincent', peran: 'owner' })])
+
+    tampilkan()
+    await screen.findByText('Vincent')
+
+    expect(screen.queryByRole('button', { name: /Reset sandi/ })).toBeNull()
   })
 })
 
