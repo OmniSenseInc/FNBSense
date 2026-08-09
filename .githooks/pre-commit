@@ -1,0 +1,55 @@
+#!/bin/sh
+# Menolak nilai rahasia sungguhan yang menyelinap ke berkas *.env.example.
+#
+# Dibuat setelah kebocoran yang SAMA terjadi dua kali: RABBITMQ_PASSWORD=omnisense
+# di F5a, lalu terulang persis di F8a. Berkas contoh tak ter-gitignore — itu
+# gunanya — jadi satu baris ceroboh langsung sampai ke riwayat publik, dan
+# menghapusnya kemudian tak menghapus apa pun: rahasianya tetap ada di commit
+# lama dan tetap harus dirotasi.
+#
+# Yang diperiksa cuma berkas contoh. `.env` asli ter-gitignore dan tak pernah
+# di-stage, jadi memeriksanya di sini hanya akan memperlambat tiap commit tanpa
+# menutup jalan apa pun.
+#
+# Pasang: git config core.hooksPath .githooks
+
+set -e
+
+berkas=$(git diff --cached --name-only --diff-filter=ACM |
+    grep -E '(^|/)\.?[a-z.]*env[a-z.]*\.example$' || true)
+
+[ -z "$berkas" ] && exit 0
+
+# Bentuk yang memang BUKAN rahasia, disusun dari survei seluruh berkas contoh
+# yang sudah ada di repo:
+#   null           → idiom Laravel untuk "tak dipakai" (REDIS_/MAIL_PASSWORD)
+#   file://…       → JWT_*_KEY menyimpan JALUR berkas, bukan kuncinya
+#   change_me, your_, placeholder, xxx → placeholder yang memang disengaja
+DIIZINKAN='=(null|file://.*|.*(change_me|changeme|your_|your-|placeholder|[xX]{3}).*)$'
+
+temuan=''
+
+for f in $berkas; do
+    # Isi yang DI-STAGE, bukan isi di disk. Keduanya bisa berbeda (`git add -p`),
+    # dan yang masuk riwayat adalah yang di-stage.
+    hasil=$(git show ":$f" |
+        grep -nE '^[A-Z0-9_]*(PASSWORD|TOKEN|SECRET|KEY)[A-Z0-9_]*=.+' |
+        grep -vE "$DIIZINKAN" || true)
+
+    [ -n "$hasil" ] && temuan="$temuan$(echo "$hasil" | sed "s|^|  $f:|")
+"
+done
+
+[ -z "$temuan" ] && exit 0
+
+echo 'Commit ditolak: nilai yang tampak sungguhan di berkas .env.example.' >&2
+echo >&2
+printf '%s' "$temuan" >&2
+echo >&2
+echo 'Ganti dengan nilai kosong, null, atau placeholder (mis. change_me_in_dev).' >&2
+echo 'Kalau nilai itu memang pernah dipakai di mana pun, ROTASI juga — bukan' >&2
+echo 'sekadar dihapus dari berkas.' >&2
+echo >&2
+echo 'Kalau benar-benar placeholder yang belum dikenali hook ini: git commit --no-verify' >&2
+
+exit 1

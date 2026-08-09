@@ -31,3 +31,9 @@ Dockerfile      text eol=lf
 # Compose dan konfigurasi CI dibaca juga oleh alat di dalam container.
 *.yml           text eol=lf
 *.yaml          text eol=lf
+
+# Hook git tak berekstensi, jadi `*.sh` di atas tak menjangkaunya — dan ia
+# dijalankan sebagai skrip sh persis seperti berkas .sh mana pun. Dengan CRLF
+# ia gagal menyebut alasannya ("bad interpreter: /bin/sh^M"), dan yang gagal
+# adalah pagar yang seharusnya menahan rahasia masuk ke riwayat.
+.githooks/*     text eol=lf
