@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AvailabilityController;
+use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\StockController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +13,11 @@ Route::get('ping', fn () => response()->json(['service' => 'inventory', 'status'
 // Bentuk TUNGGAL `availability` menandai endpoint mesin, sepola `recipe` dan
 // `ingredient` di Catalog. Tak ada JWT: yang memesan adalah pelanggan tanpa akun.
 Route::post('availability', AvailabilityController::class)->middleware(['service', 'throttle:120,1']);
+
+// Saldo mentah untuk Catalog (menandai produk habis di /api/menu). Dipisah dari
+// `availability` supaya Catalog tak perlu memanggil gerbang yang justru
+// memanggil balik Catalog untuk resepnya — lingkaran tiap pemindaian QR.
+Route::get('balance', BalanceController::class)->middleware(['service', 'throttle:120,1']);
 
 Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
     Route::get('stock', [StockController::class, 'index']);

@@ -94,9 +94,12 @@ class MenuTest extends TestCase
 
         $this->assertSame(['id', 'name', 'products'], array_keys($data[0]));
         $this->assertSame(
-            ['id', 'name', 'description', 'price', 'image_url'],
+            ['id', 'name', 'description', 'price', 'image_url', 'is_out_of_stock'],
             array_keys($data[0]['products'][0]),
         );
+        // Tanpa ?outlet= tak ada yang bisa dinilai, dan "tak tahu" harus
+        // terbaca sebagai tidak-habis — bukan menyembunyikan medannya.
+        $this->assertFalse($data[0]['products'][0]['is_out_of_stock']);
     }
 
     public function test_param_tenant_wajib_422(): void

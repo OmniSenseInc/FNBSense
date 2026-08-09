@@ -31,6 +31,14 @@ class MenuProductResource extends JsonResource
             'description' => $this->description,
             'price' => $this->price,
             'image_url' => $this->image_url,
+            // Bahannya tak cukup untuk satu porsi di outlet yang diminta.
+            // Selalu ada, meski `?outlet=` tak dikirim — waktu itu nilainya
+            // false, yang berarti "kami tak tahu", bukan "pasti ada". Medan
+            // yang kadang muncul kadang tidak membuat pembacanya menebak.
+            //
+            // Beda dari is_available: itu saklar owner ("Habiskan"), dan produk
+            // yang dimatikannya tak pernah sampai ke sini sama sekali.
+            'is_out_of_stock' => (bool) $this->is_out_of_stock,
         ];
     }
 }

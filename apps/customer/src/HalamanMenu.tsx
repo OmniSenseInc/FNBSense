@@ -178,13 +178,21 @@ export default function HalamanMenu() {
             <ul className="flex flex-col gap-3">
               {k.produk.map((p) => {
                 const baris = isi[p.id]
+                const tidakAda = p.habis
                 return (
                 <li key={p.id} className="rounded-md border border-slate-200 p-3">
                   {/* HANYA baris ini yang jadi tombol, bukan seluruh kartu:
                       kalau kartunya yang diklik, menekan +/− ikut membuka
-                      lembar detail karena klik merambat ke induknya. */}
+                      lembar detail karena klik merambat ke induknya.
+
+                      disabled bawaan, bukan onClick yang diam-diam tak berbuat
+                      apa-apa: ia sekaligus menutup jalur keyboard dan membuat
+                      pembaca layar mengumumkannya "tidak tersedia". Lembar
+                      detail punya tombol tambah sendiri — membiarkannya terbuka
+                      untuk produk habis berarti penandanya bisa dilewati. */}
                   <button
                     type="button"
+                    disabled={tidakAda}
                     onClick={() => setProdukDibuka(p)}
                     className="flex w-full items-start gap-3 text-left"
                   >
@@ -193,7 +201,19 @@ export default function HalamanMenu() {
                     {/* flex-1 + min-w-0: teks boleh menyusut, TAK boleh mendorong
                         tombol qty keluar layar saat nama menunya panjang. */}
                     <div className="min-w-0 flex-1">
-                      <p className="text-[17px] font-semibold">{p.nama}</p>
+                      <p
+                        className={`text-[17px] font-semibold ${tidakAda ? 'text-slate-400' : ''}`}
+                      >
+                        {p.nama}
+                      </p>
+                      {/* Kata, bukan sekadar warna abu: pelanggan yang buta
+                          warna atau sedang di bawah matahari cuma melihat teks
+                          yang agak pudar dan menyangka menunya baik-baik saja. */}
+                      {tidakAda && (
+                        <p className="mt-0.5 text-sm font-semibold text-slate-500">
+                          Habis hari ini
+                        </p>
+                      )}
                       {/* line-clamp-2: deskripsi panjang dipotong, tinggi baris tetap
                           seragam. Versi utuhnya dibaca di lembar detail. */}
                       <p className="mt-0.5 line-clamp-2 text-sm text-slate-600">
@@ -215,13 +235,34 @@ export default function HalamanMenu() {
                       dan di HP 360px tiga kolom menyisakan cuma ~72px untuk nama menu.
                       Tombol tak boleh dikecilkan (44px batas sentuh), jadi barisnya
                       yang dipecah. */}
-                  <div className="mt-3 flex justify-end">
-                    <KontrolQty
-                      nilai={baris?.qty ?? 0}
-                      onUbah={(n) => ubah(p.id, n)}
-                      label={p.nama}
-                    />
-                  </div>
+                  {/* Produk habis kehilangan kontrol qty-nya. Tapi kalau ia
+                      SUDAH di keranjang — pelanggan menambahkannya sebelum
+                      jawaban stok tiba, atau bahannya habis sementara ia
+                      memilih — menghilangkan kontrolnya begitu saja mengunci
+                      barang yang tak bisa dibayar di dalam keranjang, dan
+                      pesanannya akan ditolak server tanpa pelanggan punya cara
+                      membatalkannya dari layar ini. */}
+                  {tidakAda ? (
+                    baris && (
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => ubah(p.id, 0)}
+                          className="h-11 rounded-md border border-slate-300 px-3 text-sm font-semibold"
+                        >
+                          Hapus dari keranjang
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <div className="mt-3 flex justify-end">
+                      <KontrolQty
+                        nilai={baris?.qty ?? 0}
+                        onUbah={(n) => ubah(p.id, n)}
+                        label={p.nama}
+                      />
+                    </div>
+                  )}
                 </li>
                 )
               })}

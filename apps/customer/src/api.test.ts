@@ -1,5 +1,75 @@
-import { describe, expect, it } from 'vitest'
-import { bacaWaktuKlaim, petakanMenu, type KategoriMentah } from './api'
+import { describe, expect, it, vi } from 'vitest'
+import { ambilMenu, bacaWaktuKlaim, petakanMenu, type KategoriMentah } from './api'
+
+/**
+ * Penanda habis — data asing, sama seperti harga menu.
+ *
+ * Akibatnya di layar: produk yang bertanda kehilangan tombol tambahnya. Salah
+ * arah di sini mahal ke DUA sisi — menandai yang sebenarnya ada berarti
+ * menyembunyikan barang yang bisa dijual, dan melewatkan yang habis berarti
+ * pelanggan baru ditolak di detik terakhir.
+ */
+/**
+ * outlet_id WAJIB ikut di URL. Tanpanya Catalog membalas menu tanpa penanda
+ * sama sekali — fitur habis mati diam-diam dan tak satu pun test bentuk-data
+ * yang menyadarinya, karena semuanya masih hijau dengan medan yang absen.
+ */
+describe('ambilMenu', () => {
+  it('mengirim tenant DAN outlet ke Catalog', async () => {
+    const panggilan: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      panggilan.push(url)
+      return { ok: true, json: async () => ({ data: [] }) }
+    })
+
+    await ambilMenu('tenant-1', 'outlet-9')
+    vi.unstubAllGlobals()
+
+    expect(panggilan[0]).toContain('tenant=tenant-1')
+    expect(panggilan[0]).toContain('outlet=outlet-9')
+  })
+})
+
+describe('petakanMenu — penanda habis', () => {
+  const kategori = (produk: Record<string, unknown>): KategoriMentah[] => [
+    {
+      id: 'k1',
+      name: 'Kopi',
+      products: [
+        {
+          id: 'p1',
+          name: 'Espresso',
+          description: null,
+          price: '18000.00',
+          image_url: null,
+          ...produk,
+        },
+      ] as KategoriMentah['products'],
+    },
+  ]
+
+  it('true dari server jadi habis', () => {
+    expect(petakanMenu(kategori({ is_out_of_stock: true }))[0].produk[0].habis).toBe(true)
+  })
+
+  it('false dari server jadi tersedia', () => {
+    expect(petakanMenu(kategori({ is_out_of_stock: false }))[0].produk[0].habis).toBe(false)
+  })
+
+  it('medan yang tak dikirim sama sekali -> tersedia, bukan habis', () => {
+    // Server lama (atau permintaan tanpa ?outlet=) tak mengirim medan ini.
+    // Menganggapnya habis akan mengosongkan seluruh menu.
+    expect(petakanMenu(kategori({}))[0].produk[0].habis).toBe(false)
+  })
+
+  it('nilai sampah tidak dipaksa jadi true', () => {
+    // Boolean('tidak') === true. Karena itu perbandingannya === true, bukan
+    // konversi — balasan rusak tak boleh menyembunyikan menu yang bisa dijual.
+    expect(petakanMenu(kategori({ is_out_of_stock: 'tidak' }))[0].produk[0].habis).toBe(false)
+    expect(petakanMenu(kategori({ is_out_of_stock: 1 }))[0].produk[0].habis).toBe(false)
+    expect(petakanMenu(kategori({ is_out_of_stock: null }))[0].produk[0].habis).toBe(false)
+  })
+})
 
 /**
  * Jam klaim datang dari server, jadi diperlakukan sebagai data asing.
@@ -99,6 +169,13 @@ describe('petakanMenu', () => {
 
     const produk = petakanMenu(mentah)[0].produk[0]
 
-    expect(Object.keys(produk)).toEqual(['id', 'nama', 'deskripsi', 'harga', 'gambarUrl'])
+    expect(Object.keys(produk)).toEqual([
+      'id',
+      'nama',
+      'deskripsi',
+      'harga',
+      'gambarUrl',
+      'habis',
+    ])
   })
 })

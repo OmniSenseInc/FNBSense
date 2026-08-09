@@ -16,6 +16,7 @@ import type { Kategori, Keranjang, Meja } from './api'
 export type KonteksMeja = {
   qrToken: string
   meja: Meja
+  /** Penanda habis ikut menempel di tiap `Produk` — lihat `Produk.habis`. */
   kategori: Kategori[]
   isi: Keranjang
   setIsi: Dispatch<SetStateAction<Keranjang>>

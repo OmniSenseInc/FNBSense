@@ -45,7 +45,11 @@ export default function LayoutMeja() {
 
     ambilMeja(qrToken)
       .then(async (m) => {
-        const k = await ambilMenu(m.tenant_id)
+        // outlet_id ikut dikirim supaya menunya sekalian membawa penanda habis
+        // per produk — satu perjalanan jaringan, bukan dua. Kalau pemeriksaan
+        // stok di Catalog gagal, menunya tetap datang utuh tanpa penanda; yang
+        // menolak pesanan tetap gerbang di server.
+        const k = await ambilMenu(m.tenant_id, m.outlet_id)
         if (batal) return
         setMeja(m)
         setKategori(k)

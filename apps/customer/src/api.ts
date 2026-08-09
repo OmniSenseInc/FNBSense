@@ -28,6 +28,15 @@ export type Produk = {
   deskripsi: string
   harga: number
   gambarUrl: string | null
+  /**
+   * Bahannya sedang tak cukup di outlet meja ini.
+   *
+   * PENANDA, bukan janji: stok bisa habis di sela antara layar ini dan tombol
+   * Pesan, dan gerbang di server tetap yang berhak menolak. `false` juga berarti
+   * "tak diketahui" — Catalog mengirimnya begitu kalau pemeriksaan stoknya
+   * sendiri gagal, supaya menu tetap bisa dibaca.
+   */
+  habis: boolean
 }
 
 export type Kategori = {
@@ -82,6 +91,7 @@ export type ProdukMentah = {
   description: string | null
   price: string | number | null
   image_url: string | null
+  is_out_of_stock?: boolean
 }
 export type KategoriMentah = { id: string; name: string; products: ProdukMentah[] }
 
@@ -90,18 +100,22 @@ export type KategoriMentah = { id: string; name: string; products: ProdukMentah[
  *
  * Penyalinan ini bukan gaya-gayaan — dua alasan nyata:
  *
- * 1. `/api/menu` mengembalikan model Eloquent MENTAH (tanpa API Resource),
- *    jadi payload-nya membawa tenant_id & timestamps. Begitu F7b menambah
- *    kolom harga modal ke `products`, HPP ikut terkirim ke HP pelanggan.
- *    Dengan daftar-izin eksplisit di sini, kolom baru apa pun TIDAK pernah
- *    masuk ke state app — bocornya berhenti di pintu ini.
+ * 1. Daftar-izin lapis kedua. Catalog sudah membungkusnya dengan API Resource
+ *    (`MenuProductResource`), tapi kolom baru di sana ikut terkirim begitu
+ *    seseorang menambahkannya — mis. harga modal saat F7b masuk. Dengan
+ *    penyalinan eksplisit di sini, medan yang tak disebut TIDAK pernah masuk
+ *    ke state app.
  *
  * 2. `price` kolom decimal(12,2) -> dikirim sebagai STRING "22000.00", bukan
  *    angka. Tanpa konversi, `harga * qty` menghasilkan hasil ngawur.
+ *
+ * `outletId` menentukan penanda habis: saldo bahan selalu per-outlet, dan
+ * Catalog tak bisa menebaknya. Tanpa itu menu tetap utuh, cuma tak bertanda.
  */
-export async function ambilMenu(tenantId: string): Promise<Kategori[]> {
+export async function ambilMenu(tenantId: string, outletId: string): Promise<Kategori[]> {
   const mentah = await ambil<KategoriMentah[]>(
-    `${CATALOG}/api/menu?tenant=${encodeURIComponent(tenantId)}`,
+    `${CATALOG}/api/menu?tenant=${encodeURIComponent(tenantId)}` +
+      `&outlet=${encodeURIComponent(outletId)}`,
   )
 
   return petakanMenu(mentah)
@@ -135,6 +149,10 @@ export function petakanMenu(mentah: KategoriMentah[]): Kategori[] {
             deskripsi: p.description ?? '',
             harga,
             gambarUrl: p.image_url,
+            // === true, bukan Boolean(): medan yang hilang atau bertipe aneh
+            // harus jadi "tidak habis". Menandai habis karena balasan rusak
+            // berarti menyembunyikan menu yang sebenarnya bisa dijual.
+            habis: p.is_out_of_stock === true,
           },
         ]
       }),

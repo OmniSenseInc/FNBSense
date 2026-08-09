@@ -38,4 +38,15 @@ return [
     // Shared-secret auth service-to-service (Inventory -> Catalog, endpoint /api/recipe).
     'internal_token' => env('CATALOG_SERVICE_TOKEN'),
 
+    // Inventory: sumber saldo bahan buat menandai produk habis di /api/menu.
+    // service_token DIKIRIM sbg X-Service-Token dan HARUS sama dgn
+    // INVENTORY_SERVICE_TOKEN di sisi Inventory. Sengaja BEDA dari
+    // internal_token di atas — yang itu DITERIMA. Satu nilai untuk dua arah
+    // berarti bocornya token Inventory ikut membuka pintu masuk Catalog.
+    'inventory' => [
+        'base_url' => env('INVENTORY_BASE_URL', 'http://127.0.0.1:8003'),
+        'timeout' => (int) env('INVENTORY_TIMEOUT', 3),
+        'service_token' => env('INVENTORY_SERVICE_TOKEN'),
+    ],
+
 ];
