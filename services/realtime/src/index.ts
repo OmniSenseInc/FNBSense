@@ -11,9 +11,24 @@ import { KdsServer } from './kds-server.js';
  * hidup; F3b menaruh layar dapur di ujungnya.
  */
 
-// Dedup in-memory: at-least-once bisa mengirim ulang. CATATAN: hilang saat
-// restart → utang teknis, naikkan ke Redis kalau butuh tahan-restart.
+// Dedup in-memory: at-least-once bisa mengirim ulang. Dibatasi FIFO: begitu
+// penuh, id tertua dibuang. Tanpa batas, set tumbuh tanpa henti selama proses
+// hidup (event per pembayaran, ribuan per hari) → kebocoran memori pelan.
+// Batas ini jauh di atas kebutuhan dedup: broker hanya mengirim ulang dalam
+// jendela detik-menit, bukan ribuan event ke belakang.
 const processedEventIds = new Set<string>();
+const MAX_TRACKED_EVENTS = 10_000;
+
+/** Catat id sebagai "sudah disiarkan"; buang id tertua kalau penuh (FIFO). */
+function trackProcessed(eventId: string): void {
+  if (processedEventIds.size >= MAX_TRACKED_EVENTS) {
+    const oldest = processedEventIds.values().next().value;
+    if (oldest !== undefined) {
+      processedEventIds.delete(oldest);
+    }
+  }
+  processedEventIds.add(eventId);
+}
 
 interface EventEnvelope {
   event_id: string;
@@ -90,7 +105,7 @@ function handleMessage(channel: Channel, msg: ConsumeMessage, kds: KdsServer): v
       `(outlet=${event.outlet_id}, event_id=${event.event_id})`,
   );
 
-  processedEventIds.add(event.event_id);
+  trackProcessed(event.event_id);
   channel.ack(msg);
 }
 

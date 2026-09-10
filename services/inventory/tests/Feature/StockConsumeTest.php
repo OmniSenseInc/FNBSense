@@ -5,10 +5,13 @@ namespace Tests\Feature;
 use App\Messaging\ConsumeOutcome;
 use App\Messaging\EventPublisher;
 use App\Messaging\OrderPaidConsumer;
+use App\Messaging\ProcessedOrderGate;
 use App\Models\ProcessedOrder;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -394,5 +397,93 @@ class StockConsumeTest extends TestCase
         $this->assertSame(ConsumeOutcome::Ack, $outcome); // BUKAN Requeue, dan tak melempar
         $this->assertDatabaseHas('stock_balances', ['ingredient_id' => $bahan, 'qty_on_hand' => -300]); // potong utuh
         $this->assertDatabaseHas('processed_orders', ['order_id' => $orderId, 'status' => 'shortfall']);
+    }
+
+    /**
+     * REGRESI dedup-butuh-tebak: bentrokan unique di stock_balances (dua order
+     * BERBEDA balapan membuat baris saldo baru) BUKAN tanda "sudah diproses".
+     * Sebelumnya UniqueConstraintViolationException apa pun di-ACK → order ini
+     * lepas tanpa dipotong, diam-diam. Sekarang pagar ditanya ke
+     * processed_orders: order ini belum ada → Requeue, potongan tertunda.
+     * (mutasi: tangkap UniqueConstraintViolationException buta di handle → merah)
+     */
+    public function test_bentrokan_saldo_bahan_tak_membuang_potongan(): void
+    {
+        [$tenant, $outlet] = [(string) Str::uuid(), (string) Str::uuid()];
+        [$produk, $bahan, $orderId] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+        $this->fakeRecipe([
+            ['product_id' => $produk, 'ingredients' => [['ingredient_id' => $bahan, 'qty_per_unit' => '200.000', 'unit' => 'ml']]],
+        ]);
+        // SENGJAJA tanpa seedBalance: consumer lain (order berbeda) sedang
+        // membuat baris saldo yang sama → INSERT kita akan menabrak
+        // unique(outlet_id, ingredient_id), BUKAN unique(order_id).
+        //
+        // Trik: gantikan gate dengan yang melempar bentrokan SALDO saat claim —
+        // bentrokan yang datang dari tabel lain HARUS tetap Requeue, bukan Ack.
+        $gateMelemparSaldo = new class($bahan) extends ProcessedOrderGate
+        {
+            public function __construct(private readonly string $ingredientSaldo)
+            {
+            }
+
+            public function claim(string $orderId, string $tenantId, string $outletId, string $status): bool
+            {
+                throw new UniqueConstraintViolationException(
+                    'mysql',
+                    'insert into `stock_balances` ...',
+                    [],
+                    new RuntimeException("Duplicate entry '{$outletId}-{$this->ingredientSaldo}'"),
+                );
+            }
+        };
+        $this->app->instance(ProcessedOrderGate::class, $gateMelemparSaldo);
+
+        $outcome = $this->consumer()->handle(
+            $this->envelope($tenant, $outlet, $orderId, [['product_id' => $produk, 'qty' => 1]])
+        );
+
+        $this->assertSame(ConsumeOutcome::Requeue, $outcome); // dulu: Ack (potongan hilang!)
+        $this->assertDatabaseMissing('processed_orders', ['order_id' => $orderId]);
+    }
+
+    /** Envelope dengan id non-scalar (bug serialisasi) → Dead, bukan menumbangkan daemon. */
+    public function test_id_non_scalar_dead(): void
+    {
+        [$tenant] = [(string) Str::uuid()];
+        $orderId = (string) Str::uuid();
+
+        $envelope = $this->envelope($tenant, (string) Str::uuid(), $orderId, [
+            ['product_id' => (string) Str::uuid(), 'qty' => 1],
+        ]);
+        $envelope['payload']['order_id'] = ['rusak']; // non-scalar lolos empty()
+
+        $outcome = $this->consumer()->handle($envelope);
+
+        $this->assertSame(ConsumeOutcome::Dead, $outcome);
+    }
+
+    /** occurred_at bukan tanggal → Dead (pesanan racun tak boleh requeue selamanya). */
+    public function test_occurred_at_bukan_tanggal_dead(): void
+    {
+        [$tenant] = [(string) Str::uuid()];
+
+        $envelope = $this->envelope($tenant, (string) Str::uuid(), (string) Str::uuid(), [
+            ['product_id' => (string) Str::uuid(), 'qty' => 1],
+        ]);
+        $envelope['occurred_at'] = 'bukan-tanggal';
+
+        $this->assertSame(ConsumeOutcome::Dead, $this->consumer()->handle($envelope));
+    }
+
+    /** qty negatif = racun yang MENAMBAH stok saat dipotong → Dead. */
+    public function test_qty_negatif_dead(): void
+    {
+        [$tenant] = [(string) Str::uuid()];
+
+        $envelope = $this->envelope($tenant, (string) Str::uuid(), (string) Str::uuid(), [
+            ['product_id' => (string) Str::uuid(), 'qty' => -2],
+        ]);
+
+        $this->assertSame(ConsumeOutcome::Dead, $this->consumer()->handle($envelope));
     }
 }

@@ -12,8 +12,9 @@
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="3306"/>
         <env name="DB_DATABASE" value="fnbsense_reporting_test"/>
-        <env name="DB_USERNAME" value="root"/>
-        <env name="DB_PASSWORD" value=""/>
+        <!-- Kredensial DIWARISI dari .env (DB_USERNAME/DB_PASSWORD): meng-hardcode
+             "root" di sini membuat suite merah di mesin yang MySQL-nya menolak
+             root via TCP — pola yang benar lihat services/finance/phpunit.xml. -->
         <env name="LOG_CHANNEL" value="null"/>
         <env name="JWT_PUBLIC_KEY" value="file://../iam/storage/keys/jwt-public.pem"/>
     </php>

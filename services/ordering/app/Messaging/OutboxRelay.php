@@ -8,6 +8,7 @@ use App\Models\Outbox;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Message\AMQPMessage;
 use RuntimeException;
+use Throwable;
 
 /**
  * Inti relay (F3a) — dipisah dari command supaya bisa diuji dengan channel palsu
@@ -40,6 +41,14 @@ class OutboxRelay
     /**
      * Angkat SATU batch baris belum-terkirim (tertua dulu) → publish → tandai.
      *
+     * Satu baris yang gagal publish TIDAK menggagalkan batch: exception-nya
+     * ditangkap, barisnya dibiarkan published_at null (dicoba pass berikut),
+     * dan sisa baris lanjut dikirim. Tanpa ini, satu baris yang bermasalah
+     * selalu menempati posisi tertua — pass berikutnya menarik batch yang sama,
+     * gagal lagi di baris yang sama — dan seluruh aliran event TERSUMBAT di
+     * belakangnya (head-of-line blocking): stok tak terpotong, KDS tak dapat
+     * tiket, padahal baris-baris setelahnya bisa terkirim dengan sempurna.
+     *
      * @return int jumlah baris yang berhasil di-relay
      */
     public function flushBatch(int $limit): int
@@ -52,7 +61,16 @@ class OutboxRelay
 
         $relayed = 0;
         foreach ($rows as $row) {
-            $this->publish($row);
+            try {
+                $this->publish($row);
+            } catch (Throwable $e) {
+                // Baris ini TIDAK ditandai terkirim → dicoba lagi pass berikut.
+                // Log biar operator tahu ada baris yang pernah tersandung.
+                report($e);
+
+                continue;
+            }
+
             // Baris ini hanya tercapai kalau publish() tidak melempar (broker sudah
             // confirm). Urutan publish→confirm→save tak boleh dibalik.
             $row->forceFill(['published_at' => now()])->save();

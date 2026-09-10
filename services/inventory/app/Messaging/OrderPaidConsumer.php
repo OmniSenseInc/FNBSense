@@ -10,7 +10,6 @@ use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Services\CatalogRecipeClient;
 use Illuminate\Database\QueryException;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -32,6 +31,7 @@ class OrderPaidConsumer
     public function __construct(
         private readonly CatalogRecipeClient $catalog,
         private readonly EventPublisher $publisher,
+        private readonly ProcessedOrderGate $gate,
     ) {}
 
     public function handle(array $envelope): ConsumeOutcome
@@ -64,10 +64,16 @@ class OrderPaidConsumer
         }
 
         // 4. Potong dalam satu transaksi (potong + tandai processed = atomik).
+        //    Dedup TIDAK lagi ditebak dari jenis exception: unique(
+        //    outlet_id, ingredient_id) di stock_balances bisa bentrok untuk dua
+        //    order BERBEDA yang balapan membuat baris saldo baru — ACK di situ
+        //    = potongan stok hilang permanen, diam-diam. Pagar yang sah hanya
+        //    unique(order_id) di processed_orders, dan ia diputus di dalam
+        //    deduct() lewat ProcessedOrderGate::claim().
         try {
             $result = $this->deduct($envelope, $recipes);
-        } catch (UniqueConstraintViolationException $e) {
-            // Race: consumer lain sudah menandai processed di sela cek dedup & commit.
+        } catch (DuplicateProcessedOrderException $e) {
+            // Race: consumer lain menandai processed di sela cek dedup & commit.
             // Transaksi kita rollback penuh → tak ada potong dobel. Aman di-ACK.
             return ConsumeOutcome::Ack;
         } catch (QueryException $e) {
@@ -210,16 +216,15 @@ class OrderPaidConsumer
             // Sengaja beda dari pemicu event: tabel mencatat keadaan, event mencatat kejadian.
             $status = $unmapped !== [] ? 'recipe_missing' : ($anyNegative ? 'shortfall' : 'deducted');
 
-            // Ditulis DI DALAM transaksi → unique(order_id) = pagar idempotensi.
-            // Kalau bentrok (race), UniqueConstraintViolationException naik & seluruh
-            // potong ikut rollback (ditangkap di handle() → ACK).
-            ProcessedOrder::create([
-                'order_id' => $orderId,
-                'tenant_id' => $tenantId,
-                'outlet_id' => $outletId,
-                'status' => $status,
-                'processed_at' => now(),
-            ]);
+            // Pagar idempotensi: unique(order_id) di processed_orders, DITANYA
+            // ke DB lewat gate — bukan ditebak dari jenis exception. Bentrokan
+            // = duplikat sungguhan (consumer lain menang) → lempar sinyal khusus
+            // yang di-handle() diterjemahkan jadi ACK; galat DB lain (termasuk
+            // bentrokan stock_balances saat dua order beda balapan) tetap naik
+            // sebagai QueryException → Requeue → potongan TIDAK pernah hilang.
+            if (! $this->gate->claim($orderId, $tenantId, $outletId, $status)) {
+                throw new DuplicateProcessedOrderException($orderId);
+            }
 
             if ($status !== 'deducted') {
                 Log::warning("inventory.consume: order {$orderId} status={$status}.");
@@ -268,21 +273,56 @@ class OrderPaidConsumer
         if (($e['event_type'] ?? null) !== 'order.paid') {
             return false;
         }
-        if (empty($e['tenant_id']) || empty($e['outlet_id'])) {
+
+        // Id scoping WAJIB string tak-kosong. `empty()` meloloskan non-scalar
+        // (array/objek dari bug serialisasi) → meledak sbg TypeError saat
+        // INSERT — bukan QueryException → tidak tertangkap → menumbangkan
+        // daemon (kelas bug yang sama yang sudah dibereskan di finance).
+        if (! $this->nonEmptyString($e['tenant_id'] ?? null)
+            || ! $this->nonEmptyString($e['outlet_id'] ?? null)) {
+            return false;
+        }
+
+        // occurred_at WAJIB tanggal yang bisa di-parse: string sembarang lolos
+        // ke kolom timestamp → QueryException → requeue selamanya (pesan racun).
+        if (! is_string($e['occurred_at'] ?? null) || ! $this->parsableDate($e['occurred_at'])) {
             return false;
         }
 
         $payload = $e['payload'] ?? null;
-        if (! is_array($payload) || empty($payload['order_id']) || ! is_array($payload['items'] ?? null)) {
+        if (! is_array($payload) || ! $this->nonEmptyString($payload['order_id'] ?? null) || ! is_array($payload['items'] ?? null)) {
             return false;
         }
 
         foreach ($payload['items'] as $item) {
-            if (! is_array($item) || empty($item['product_id']) || ! isset($item['qty']) || ! is_numeric($item['qty'])) {
+            if (! is_array($item) || ! $this->nonEmptyString($item['product_id'] ?? null) || ! isset($item['qty']) || ! is_numeric($item['qty'])) {
+                return false;
+            }
+
+            // qty WAJIB positif. is_numeric saja meloloskan "-2" (potong minus =
+            // MENAMBAH stok — racun paling licik) dan "2.5" (pecahan di luar
+            // kontrak qty integer). Nol juga sia-sia: order tanpa takaran.
+            if ((float) $item['qty'] <= 0) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private function nonEmptyString(mixed $v): bool
+    {
+        return is_string($v) && $v !== '';
+    }
+
+    private function parsableDate(string $v): bool
+    {
+        try {
+            \Carbon\Carbon::parse($v);
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 }

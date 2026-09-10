@@ -188,4 +188,32 @@ class OutboxRelayTest extends TestCase
         $this->assertSame(2, $relayed);
         $this->assertSame(1, Outbox::whereNull('published_at')->count());
     }
+
+    /**
+     * REGRESI head-of-line blocking: baris PERTAMA gagal publish (broker mati/
+     * nack) TIDAK boleh menggagalkan baris kedua yang bisa terkirim. Sebelum
+     * perbaikan, exception dari baris pertama membatalkan seluruh flushBatch —
+     * pass berikutnya menarik batch yang sama, gagal lagi di baris yang sama,
+     * dan seluruh aliran event tersumbat di belakang satu baris bermasalah.
+     * (mutasi: hapus try/catch di flushBatch → test ini merah)
+     */
+    public function test_baris_gagal_tak_memblokir_baris_lain(): void
+    {
+        $gagal = $this->makeOutbox();  // tertua → dicoba lebih dulu → gagal
+        $sukses = $this->makeOutbox();
+
+        $channel = $this->mockChannel();
+        $channel->shouldReceive('basic_publish')->twice();
+        // Confirm baris PERTAMA melempar (broker menolak), yang KEDUA sukses.
+        $channel->shouldReceive('wait_for_pending_acks')
+            ->once()
+            ->andThrow(new \RuntimeException('broker down (simulasi)'));
+        $channel->shouldReceive('wait_for_pending_acks')->once();
+
+        $relayed = (new OutboxRelay($channel, self::EXCHANGE))->flushBatch(10);
+
+        $this->assertSame(1, $relayed);                                   // baris kedua tetap terkirim
+        $this->assertNull($gagal->fresh()->published_at);                 // yang gagal: dicoba lagi nanti
+        $this->assertNotNull($sukses->fresh()->published_at);             // yang sehat: jalan
+    }
 }
