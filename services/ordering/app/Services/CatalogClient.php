@@ -63,6 +63,44 @@ class CatalogClient
     }
 
     /**
+     * Menu LENGKAP (kategori -> produk) untuk layar POS kasir — beda dari
+     * productsForTenant() yang meratakan jadi peta. POS butuh struktur kategori
+     * untuk navigasi, dan penanda habis per produk (perlu outlet).
+     *
+     * @return array<int, array<string, mixed>> struktur `data` dari GET /api/menu.
+     *
+     * @throws CatalogUnavailableException Catalog tak terhubung / balas non-2xx / data tak dikenali.
+     */
+    public function menu(string $tenantId, ?string $outletId = null): array
+    {
+        $query = ['tenant' => $tenantId];
+        if ($outletId !== null) {
+            $query['outlet'] = $outletId;
+        }
+
+        try {
+            $response = Http::baseUrl($this->baseUrl())
+                ->timeout($this->timeout())
+                ->connectTimeout($this->timeout())
+                ->acceptJson()
+                ->get('/api/menu', $query);
+        } catch (ConnectionException $e) {
+            throw new CatalogUnavailableException('Catalog tidak dapat dihubungi.', 0, $e);
+        }
+
+        if ($response->failed()) {
+            throw new CatalogUnavailableException("Catalog membalas status {$response->status()}.");
+        }
+
+        $data = $response->json('data');
+        if (! is_array($data)) {
+            throw new CatalogUnavailableException('Catalog membalas data yang tidak dikenali.');
+        }
+
+        return $data;
+    }
+
+    /**
      * Ratakan struktur menu (kategori -> produk bersarang) menjadi peta produk
      * ber-key id, membuang bungkus kategori yang tak dibutuhkan Ordering.
      *

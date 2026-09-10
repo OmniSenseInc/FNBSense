@@ -115,3 +115,41 @@ export function catatPesanan(
 
   return baru
 }
+
+/**
+ * Kosongkan seluruh catatan pesanan meja ini — dipakai tombol "Selesai".
+ *
+ * Gagal menghapus (localStorage menolak) tak dianggap fatal: daftar yang
+ * menumpuk cuma ketidaknyamanan kecil, bukan kegagalan sistem.
+ */
+export function kosongkanPesananSaya(kunci: string): void {
+  try {
+    localStorage.removeItem(kunci)
+  } catch {
+    // Safari private mode dsb. Diamkan.
+  }
+}
+
+/**
+ * Buang entri yang pesanannya sudah SELESAI (siap diantar / batal / hangus),
+ * kembalikan daftar yang tersisa. Dipanggil popup "Pesanan saya" setelah ia
+ * mengambil status tiap pesanan dan tahu mana yang sudah lewat — supaya
+ * hitungan tombol di menu tak terus menghitung pesanan yang sudah selesai,
+ * dan pesanan pelanggan sebelumnya tak kebawa ke pelanggan berikutnya.
+ */
+export function buangPesananSelesai(
+  kunci: string,
+  idSelesai: string[],
+  sekarang: number = Date.now(),
+): EntriPesanan[] {
+  const idSet = new Set(idSelesai)
+  const sisa = bacaPesananSaya(kunci, sekarang).filter((entri) => !idSet.has(entri.id))
+
+  try {
+    localStorage.setItem(kunci, JSON.stringify(sisa))
+  } catch {
+    // Kuota penuh / storage ditolak. Diamkan.
+  }
+
+  return sisa
+}

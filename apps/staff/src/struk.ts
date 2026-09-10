@@ -152,7 +152,8 @@ function tanggalJam(iso: string | null): string {
 function angkaStruk(pesanan: Pesanan): number[] {
   return [
     pesanan.grand_total,
-    pesanan.subtotal,
+    pesanan.grossSubtotal,
+    pesanan.diskon,
     pesanan.pajak,
     pesanan.layanan,
     ...pesanan.items.flatMap((i) => [i.qty, i.hargaSatuan, i.total]),
@@ -230,7 +231,14 @@ export function barisStruk(pesanan: Pesanan, outlet: IdentitasOutlet, lebar: num
   tulis('-'.repeat(lebar))
 
   // ── Rincian uang ──────────────────────────────────────────────────────
-  tulis(kolom('Subtotal', uang(pesanan.subtotal), lebar))
+  tulis(kolom('Subtotal', uang(pesanan.grossSubtotal), lebar))
+  // Potongan promo jadi baris sendiri, dan di sinilah "Subtotal" (kotor) bisa
+  // dijelaskan. Hilang saat nol — promo memang opsional, beda dari layanan &
+  // pajak. Labelnya nama promo (mis. "Diskon 10%"), bukan "Diskon" generik,
+  // supaya pelanggan tahu persis promo apa yang menyentuh struknya.
+  if (pesanan.diskon > 0) {
+    tulis(kolom(pesanan.promo ?? 'Diskon', '-' + uang(pesanan.diskon), lebar))
+  }
   // Layanan & pajak SELALU dicetak, walau nol — sepola layar nota dan layar
   // status pelanggan. Pungutan wajib yang tak tercantum bikin orang mengira
   // ada yang disembunyikan, dan yang lebih buruk: kertas yang menghilangkan

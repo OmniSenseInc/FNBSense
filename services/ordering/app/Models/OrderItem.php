@@ -22,6 +22,7 @@ class OrderItem extends Model
         'unit_price',
         'qty',
         'line_total',
+        'unit_cost',
         'note',
     ];
 
@@ -31,6 +32,7 @@ class OrderItem extends Model
             'unit_price' => 'integer',
             'qty' => 'integer',
             'line_total' => 'integer',
+            'unit_cost' => 'integer',
         ];
     }
 

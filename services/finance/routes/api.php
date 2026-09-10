@@ -17,6 +17,9 @@ Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
     // device, browser di-clear) tak bisa ditutup selamanya — dan `open_key`
     // unik per outlet bikin shift baru selalu 409. Kas outlet macet permanen.
     Route::get('shifts/current', [ShiftController::class, 'current']);
+    // Riwayat shift tertutup (daftar). Di atas `shifts/{id}`: tanpa ini layar kasir
+    // tak bisa menampilkan shift yang sudah lewat sama sekali.
+    Route::get('shifts', [ShiftController::class, 'index']);
     Route::get('shifts/{id}', [ShiftController::class, 'show']);
 
     // Pengeluaran (F5d): kasir di kasir yang belanja → boleh catat & lihat.
@@ -27,6 +30,6 @@ Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
 // Laporan laba-rugi lintas hari = alat OWNER, bukan kasir. Kasir cukup laporan
 // per-shift-nya sendiri (F5c). Pisahkan role biar akun kasir tak bisa tarik P&L
 // & rincian belanja seluruh riwayat outlet.
-Route::middleware(['jwt', 'role:owner'])->group(function () {
+Route::middleware(['jwt', 'role:owner,manager'])->group(function () {
     Route::get('reports', [ReportController::class, 'summary']);
 });

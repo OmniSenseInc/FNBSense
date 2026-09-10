@@ -106,14 +106,14 @@ export default function LayarDapur({ onKeluar }: { onKeluar: () => void }) {
   }
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-        <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
+        <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
           ← Antrean
         </Link>
         <div className="text-right">
           <h1 className="text-xl font-semibold">Dapur</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-stone-600">
             {daftar === null ? 'Memuat…' : `${daftar.length} pesanan`}
           </p>
         </div>
@@ -131,7 +131,7 @@ export default function LayarDapur({ onKeluar }: { onKeluar: () => void }) {
         )}
 
         {daftar !== null && daftar.length === 0 && (
-          <p className="py-16 text-center text-lg text-slate-600">
+          <p className="py-16 text-center text-lg text-stone-600">
             Tak ada pesanan yang menunggu dibuat.
           </p>
         )}
@@ -141,20 +141,20 @@ export default function LayarDapur({ onKeluar }: { onKeluar: () => void }) {
             const meja = labelMeja(pesanan.meja, pesanan.tipe)
 
             return (
-              <li key={pesanan.id} className="rounded-md border border-slate-200 bg-white p-4">
+              <li key={pesanan.id} className="rounded-md border border-stone-200 bg-white p-4">
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-3xl font-bold tabular-nums">{pesanan.order_number}</p>
                   {/* Jam BAYAR, bukan jam pesan: hitungan menunggu pelanggan di
                       layar ini mulai sejak uangnya diterima. */}
-                  <p className="text-sm text-slate-600">dibayar {jam(pesanan.waktuBayar)}</p>
+                  <p className="text-sm text-stone-600">dibayar {jam(pesanan.waktuBayar)}</p>
                 </div>
                 {/* Meja dapat barisnya sendiri dan ikut dibesarkan: inilah
                     satu-satunya petunjuk ke mana minumannya diantar, dan di
                     kartu kasir ia sempat menumpang di belakang nomor. */}
                 <p className="text-xl">
                   {meja && <span className="font-semibold">{meja}</span>}
-                  {meja && <span className="text-slate-400"> · </span>}
-                  <span className="text-slate-600">{pesanan.customer_name}</span>
+                  {meja && <span className="text-stone-400"> · </span>}
+                  <span className="text-stone-600">{pesanan.customer_name}</span>
                 </p>
 
                 {/* Isi pesanan ikut ditampilkan, bukan cuma nomornya: daftar ini
@@ -173,7 +173,7 @@ export default function LayarDapur({ onKeluar }: { onKeluar: () => void }) {
                           baru ketahuan setelah gelasnya sampai ke meja dan harus
                           dibuang. */}
                       {item.note && (
-                        <span className="mt-1 block rounded bg-amber-50 px-2 py-1 text-lg font-semibold text-amber-800">
+                        <span className="mt-1 block rounded bg-sage-50 px-2 py-1 text-lg font-semibold text-sage-800">
                           {item.note}
                         </span>
                       )}
@@ -190,7 +190,7 @@ export default function LayarDapur({ onKeluar }: { onKeluar: () => void }) {
                   type="button"
                   disabled={kirimId !== null}
                   onClick={() => siap(pesanan)}
-                  className="mt-4 w-full rounded-md bg-slate-900 px-4 py-4 text-xl font-semibold text-white disabled:opacity-50"
+                  className="mt-4 w-full rounded-md bg-stone-900 px-4 py-4 text-xl font-semibold text-white disabled:opacity-50"
                 >
                   {kirimId === pesanan.id ? 'Menyimpan…' : 'Siap diantar'}
                 </button>

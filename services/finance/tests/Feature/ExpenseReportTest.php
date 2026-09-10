@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Expense;
 use App\Models\Sale;
+use App\Models\Shift;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\Concerns\MintsToken;
@@ -153,22 +154,64 @@ class ExpenseReportTest extends TestCase
             ->assertJsonPath('data.net', 85000); // 160k - 75k
     }
 
-    /** Window rentang half-open: sebelum from & sesudah to dibuang (batas hari). */
+    /** Window rentang half-open: sebelum from & sesudah to dibuang (batas hari WIB). */
     public function test_laporan_window_rentang(): void
     {
         [$tenant, $outlet] = $this->ids();
 
-        $this->sale($tenant, $outlet, 50000, 'cash', '2026-07-20 00:00:00'); // awal hari from → in
-        $this->sale($tenant, $outlet, 70000, 'cash', '2026-07-20 23:59:59'); // akhir hari to → in
-        $this->sale($tenant, $outlet, 99999, 'cash', '2026-07-19 23:59:59'); // sebelum from → out
-        $this->sale($tenant, $outlet, 88888, 'cash', '2026-07-21 00:00:00'); // hari sesudah to → out
-        $this->expense($tenant, $outlet, 30000, 'bahan', '2026-07-21 00:00:00'); // sesudah → out
+        // from/to dibaca sebagai tanggal WIB (Asia/Jakarta). Window half-open:
+        // [from 00:00 WIB, to+1hari 00:00 WIB) = [19-07 17:00 UTC, 20-07 17:00 UTC).
+        // paid_at tersimpan UTC, jadi batasnya ditulis dalam UTC di sini.
+        $this->sale($tenant, $outlet, 50000, 'cash', '2026-07-19 17:00:00'); // 00:00 WIB 20-07 → in
+        $this->sale($tenant, $outlet, 70000, 'cash', '2026-07-20 16:59:59'); // 23:59:59 WIB 20-07 → in
+        $this->sale($tenant, $outlet, 99999, 'cash', '2026-07-19 16:59:59'); // 23:59:59 WIB 19-07 → out
+        $this->sale($tenant, $outlet, 88888, 'cash', '2026-07-20 17:00:00'); // 00:00 WIB 21-07 → out
+        $this->expense($tenant, $outlet, 30000, 'bahan', '2026-07-20 17:00:00'); // sesudah → out
 
         $this->getJson('/api/reports?from=2026-07-20&to=2026-07-20', $this->authHeaders($tenant, $outlet, 'owner'))
             ->assertOk()
             ->assertJsonPath('data.sales.total', 120000)
             ->assertJsonPath('data.sales.transactions', 2)
             ->assertJsonPath('data.expenses.total', 0);
+    }
+
+    /** Laporan untung: HPP, laba kotor + margin, lalu laba bersih = laba kotor − pengeluaran. */
+    public function test_laporan_hpp_laba_kotor_dan_margin(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+
+        // grand_total 100000, harga pokok 40000 -> laba kotor 60000, margin 60%.
+        Sale::create([
+            'order_id' => (string) Str::uuid(),
+            'tenant_id' => $tenant, 'outlet_id' => $outlet,
+            'gross_subtotal' => 100000, 'discount_total' => 0,
+            'subtotal' => 100000, 'service_charge' => 0, 'tax' => 0, 'grand_total' => 100000,
+            'cogs_total' => 40000,
+            'payment_method' => 'cash', 'paid_at' => '2026-07-20 09:00:00',
+        ]);
+        $this->expense($tenant, $outlet, 10000, 'operasional', '2026-07-20 08:00:00');
+
+        $res = $this->getJson('/api/reports?from=2026-07-20&to=2026-07-20', $this->authHeaders($tenant, $outlet, 'owner'))
+            ->assertOk()
+            ->assertJsonPath('data.sales.total', 100000)
+            ->assertJsonPath('data.cogs', 40000)
+            ->assertJsonPath('data.gross_profit', 60000)
+            ->assertJsonPath('data.net', 50000); // 60000 − 10000
+
+        $this->assertSame(60.0, (float) $res->json('data.margin_percent'));
+    }
+
+    /** Omzet nol (tak ada penjualan) -> margin 0, bukan division-by-zero. */
+    public function test_laporan_omzet_nol_margin_nol(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+
+        $res = $this->getJson('/api/reports?from=2026-07-20&to=2026-07-20', $this->authHeaders($tenant, $outlet, 'owner'))
+            ->assertOk()
+            ->assertJsonPath('data.sales.total', 0)
+            ->assertJsonPath('data.net', 0);
+
+        $this->assertSame(0.0, (float) $res->json('data.margin_percent'));
     }
 
     /** Laporan outlet lain nol — tak bocor lintas-outlet. */
@@ -192,5 +235,49 @@ class ExpenseReportTest extends TestCase
 
         $this->getJson('/api/reports', $h)->assertStatus(422);                          // wajib
         $this->getJson('/api/reports?from=2026-07-22&to=2026-07-20', $h)->assertStatus(422); // to < from
+    }
+
+    /**
+     * Selisih kas shift yang ditutup di rentang ikut ke laporan — total + rincian —
+     * dan manager (bukan cuma owner) boleh membacanya. Selisih TIDAK dijumlahkan
+     * ke net: ia temuan rekonsiliasi fisik, bukan omzet.
+     */
+    public function test_laporan_membawa_selisih_kas_shift(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+
+        // Window laporan from/to 2026-07-20 (WIB) = [19-07 17:00 UTC, 20-07 17:00 UTC).
+        // Dua shift ditutup di dalamnya; satu lagi di luar (tak boleh muncul).
+        Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 100000, 'opened_at' => '2026-07-20 01:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 250000, 'closed_at' => '2026-07-20 08:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+        Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 200000, 'opened_at' => '2026-07-20 09:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 250000, 'closed_at' => '2026-07-20 15:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+        Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 100000, 'opened_at' => '2026-07-21 01:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 999999, 'closed_at' => '2026-07-21 08:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+
+        // Cash di tiap window: shift 1 → +70k (250k − (100k+80k)); shift 2 → −30k.
+        $this->sale($tenant, $outlet, 80000, 'cash', '2026-07-20 02:00:00');
+        $this->sale($tenant, $outlet, 80000, 'cash', '2026-07-20 10:00:00');
+
+        $res = $this->getJson('/api/reports?from=2026-07-20&to=2026-07-20', $this->authHeaders($tenant, $outlet, 'manager'));
+
+        $res->assertOk()
+            ->assertJsonCount(2, 'data.shifts.items')
+            ->assertJsonPath('data.shifts.count', 2)
+            ->assertJsonPath('data.shifts.total_variance', 40000)
+            // net = omzet 160k − pengeluaran 0 = 160k; selisih kas TAK ikut.
+            ->assertJsonPath('data.net', 160000);
     }
 }

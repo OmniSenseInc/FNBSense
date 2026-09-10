@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { NAMA_KAFE, type Produk } from './api'
+import { NAMA_KAFE, urlGambar, type Produk } from './api'
 import DialogPesananSaya from './DialogPesananSaya'
 import DialogProduk from './DialogProduk'
 import { rupiah } from './format'
@@ -69,7 +69,7 @@ export default function HalamanMenu() {
    * pesanan baru selalu datang lewat layar LAIN, yang memasang ulang halaman ini
    * saat pelanggan kembali.
    */
-  const [pesananSaya] = useState(() => bacaPesananSaya(kunciPesanan(qrToken)))
+  const [pesananSaya, setPesananSaya] = useState(() => bacaPesananSaya(kunciPesanan(qrToken)))
   const [pesananDibuka, setPesananDibuka] = useState(false)
 
   // Menu yang sedang dibuka detailnya. null = tak ada lembar terbuka.
@@ -196,7 +196,7 @@ export default function HalamanMenu() {
                     onClick={() => setProdukDibuka(p)}
                     className="flex w-full items-start gap-3 text-left"
                   >
-                    <GambarMenu src={p.gambarUrl} />
+                    <GambarMenu src={urlGambar(p.gambarUrl)} />
 
                     {/* flex-1 + min-w-0: teks boleh menyusut, TAK boleh mendorong
                         tombol qty keluar layar saat nama menunya panjang. */}
@@ -276,6 +276,7 @@ export default function HalamanMenu() {
         qrToken={qrToken}
         terbuka={pesananDibuka}
         onTutup={() => setPesananDibuka(false)}
+        onUbah={setPesananSaya}
       />
 
       {/* Selalu ter-render, isinya kosong saat tertutup: <dialog> butuh ref

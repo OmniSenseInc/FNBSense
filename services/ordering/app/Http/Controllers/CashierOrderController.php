@@ -3,12 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Enums\OrderStatus;
+use App\Enums\OrderType;
 use App\Http\Requests\CancelOrderRequest;
 use App\Http\Requests\ConfirmPaymentRequest;
 use App\Http\Requests\ListOrdersRequest;
+use App\Http\Requests\StoreCashierOrderRequest;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Outbox;
+use App\Models\Table;
+use App\Services\CatalogClient;
+use App\Services\OrderPlacement;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
@@ -78,6 +83,75 @@ class CashierOrderController extends Controller
         $order = $this->findScoped($request, $id)->load(['items', 'table']);
 
         return response()->json(['data' => $this->present($order)]);
+    }
+
+    /**
+     * Menu untuk POS kasir (kategori -> produk + penanda habis).
+     *
+     * Kasir membaca menu yang sama dengan pelanggan, TAPI scoped outlet supaya
+     * produk yang bahannya habis di outlet ini ikut tertandai — kasir tak boleh
+     * menawarkan barang yang gerbang stoknya bakal menolak saat order dibuat.
+     */
+    public function menu(Request $request, CatalogClient $catalog): JsonResponse
+    {
+        return response()->json([
+            'data' => $catalog->menu($this->tenantId($request), $this->outletId($request)),
+        ]);
+    }
+
+    /**
+     * Daftar meja AKTIF outlet ini (id + label), buat POS memilih meja dine-in.
+     * Tanpa qr_token: kasir tak perlu kredensial cetak meja.
+     */
+    public function tables(Request $request): JsonResponse
+    {
+        $tables = Table::query()
+            ->where('tenant_id', $this->tenantId($request))
+            ->where('outlet_id', $this->outletId($request))
+            ->where('is_active', true)
+            ->orderBy('label')
+            ->get(['id', 'label']);
+
+        return response()->json(['data' => $tables]);
+    }
+
+    /**
+     * Buat order POS oleh kasir (walk-in / telepon / meja). Order PENDING masuk
+     * antrean — kasir lalu mengonfirmasi pembayaran seperti order QR biasa.
+     *
+     * Harga & total dihitung server (OrderPlacement), tak pernah dari client.
+     */
+    public function store(StoreCashierOrderRequest $request, OrderPlacement $placement): JsonResponse
+    {
+        $data = $request->validated();
+        $tableId = $data['table_id'] ?? null;
+
+        if ($data['order_type'] === OrderType::DineIn->value) {
+            // Meja wajib ada & aktif & milik outlet ini. 422 (bukan 404): kasir
+            // memilih dari daftar yang sudah di-scope, jadi "tak ada" berarti
+            // daftarnya basi — bukan penyusup yang menebak id.
+            $tableId = Table::query()
+                ->where('tenant_id', $this->tenantId($request))
+                ->where('outlet_id', $this->outletId($request))
+                ->where('is_active', true)
+                ->where('id', $tableId)
+                ->value('id');
+
+            if ($tableId === null) {
+                throw new HttpException(422, 'Pilih meja yang valid untuk pesanan dine-in.');
+            }
+        }
+
+        $order = $placement->place(
+            $this->tenantId($request),
+            $this->outletId($request),
+            $tableId,
+            $data['order_type'],
+            $data['customer_name'] ?? '',
+            $data['items'],
+        );
+
+        return response()->json(['data' => $this->present($order->load(['items', 'table']))], 201);
     }
 
     /**
@@ -275,6 +349,7 @@ class CashierOrderController extends Controller
                 'product_name' => $item->product_name,
                 'qty' => (int) $item->qty,
                 'unit_price' => (int) $item->unit_price,
+                'unit_cost' => (int) $item->unit_cost,
             ])->all(),
         ];
 
@@ -393,6 +468,13 @@ class CashierOrderController extends Controller
             'ready_at' => $order->ready_at,
             'expires_at' => $order->expires_at,
             'note' => $order->note,
+            // Siapa yang membatalkan, dan KAPAN. `updated_at` = mutasi terakhir,
+            // dan pembatalan adalah mutasi terakhir yang mungkin terjadi — lihat
+            // migrasi add_cancelled_by_to_orders_table. Untuk pesanan batal,
+            // updated_at adalah jam pembatalannya. Dipakai layar "Pembatalan"
+            // owner untuk mendeteksi void yang mencurigakan.
+            'cancelled_by' => $order->cancelled_by,
+            'updated_at' => $order->updated_at,
             'created_at' => $order->created_at,
             'items' => $order->items->map(fn (OrderItem $item) => [
                 'product_id' => $item->product_id,

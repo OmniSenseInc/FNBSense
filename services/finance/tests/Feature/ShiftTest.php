@@ -232,4 +232,53 @@ class ShiftTest extends TestCase
         $this->getJson("/api/shifts/{$id}", $lain)->assertNotFound();
         $this->postJson("/api/shifts/{$id}/close", ['closing_cash' => 1], $lain)->assertNotFound();
     }
+
+    /** Riwayat (index): hanya shift tertutup, terbaru di atas, lengkap dengan laporan. */
+    public function test_index_riwayat_hanya_tertutup_terbaru_di_atas(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+        $h = $this->authHeaders($tenant, $outlet, 'cashier');
+
+        $lama = Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 100000, 'opened_at' => '2026-07-20 08:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 150000, 'closed_at' => '2026-07-20 16:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+        $baru = Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 200000, 'opened_at' => '2026-07-21 08:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 300000, 'closed_at' => '2026-07-21 16:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+        // Shift yang MASIH terbuka tak boleh bocor ke riwayat.
+        Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 50000, 'opened_at' => '2026-07-22 08:00:00',
+            'status' => 'open', 'open_key' => $outlet,
+        ]);
+
+        $this->getJson('/api/shifts', $h)
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $baru->id)      // terbaru di atas
+            ->assertJsonPath('data.1.id', $lama->id)
+            ->assertJsonPath('data.0.report.cash_variance', 100000); // 300k - 200k
+    }
+
+    /** Riwayat outlet lain tak bocor: outlet B melihat daftar kosong. */
+    public function test_index_riwayat_terisolasi_per_outlet(): void
+    {
+        [$tenant, $outletA] = $this->ids();
+        Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outletA, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 100000, 'opened_at' => '2026-07-20 08:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 150000, 'closed_at' => '2026-07-20 16:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+
+        $this->getJson('/api/shifts', $this->authHeaders($tenant, (string) Str::uuid(), 'owner'))
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
 }

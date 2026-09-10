@@ -115,18 +115,68 @@ class StaffTest extends TestCase
         $this->assertTrue($kasir->is_active);
     }
 
-    /** Privilege escalation: body minta role owner, server harus tetap bikin kasir. */
-    public function test_role_dipaksa_cashier_walau_input_meminta_owner(): void
+    /**
+     * Privilege escalation: body minta role owner DITOLAK. Owner cuma satu per
+     * tenant (pemegang akun) dan tak bisa dilahirkan lewat jalur staff.
+     */
+    public function test_role_owner_ditolak_saat_membuat_staff(): void
     {
         $owner = $this->registerOwner();
 
         $this->withTokenFresh($owner['access_token'])
             ->postJson('/api/staff', $this->staffPayload(['role' => 'owner']))
-            ->assertCreated()
-            ->assertJsonPath('role', 'cashier');
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('role');
+    }
 
-        $kasir = User::where('email', 'kasir1@kopisenja.test')->firstOrFail();
-        $this->assertSame(UserRole::Cashier, $kasir->role, 'Role harus selalu cashier, bukan dari input.');
+    /** Role tak dikenal ditolak — enum cuma kenal owner, manager, cashier. */
+    public function test_role_tak_dikenal_ditolak(): void
+    {
+        $owner = $this->registerOwner();
+
+        $this->withTokenFresh($owner['access_token'])
+            ->postJson('/api/staff', $this->staffPayload(['role' => 'admin']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('role');
+    }
+
+    /** Owner bisa melahirkan manager (role dipilih eksplisit). */
+    public function test_owner_bisa_membuat_manager(): void
+    {
+        $owner = $this->registerOwner();
+
+        $this->withTokenFresh($owner['access_token'])
+            ->postJson('/api/staff', $this->staffPayload(['role' => 'manager']))
+            ->assertCreated()
+            ->assertJsonPath('role', 'manager');
+
+        $manager = User::where('email', 'kasir1@kopisenja.test')->firstOrFail();
+        $this->assertSame(UserRole::Manager, $manager->role);
+    }
+
+    /** Promosi/demosi: owner bisa mengubah role kasir menjadi manager. */
+    public function test_owner_bisa_promosi_kasir_jadi_manager(): void
+    {
+        $owner = $this->registerOwner();
+        $kasirId = $this->withTokenFresh($owner['access_token'])
+            ->postJson('/api/staff', $this->staffPayload())
+            ->assertCreated()
+            ->json('id');
+
+        $this->withTokenFresh($owner['access_token'])
+            ->putJson("/api/staff/{$kasirId}", ['role' => 'manager'])
+            ->assertOk()
+            ->assertJsonPath('role', 'manager');
+    }
+
+    /** Anti self-demotion: owner tak bisa mengubah role dirinya sendiri. */
+    public function test_owner_tak_bisa_mengubah_role_dirinya_sendiri(): void
+    {
+        $owner = $this->registerOwner();
+
+        $this->withTokenFresh($owner['access_token'])
+            ->putJson("/api/staff/{$owner['user']['id']}", ['role' => 'manager'])
+            ->assertStatus(422);
     }
 
     /** Scoping struktural: tenant & outlet datang dari token, body diabaikan. */

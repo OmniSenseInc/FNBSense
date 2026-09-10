@@ -19,12 +19,14 @@ class SaleItem extends Model
         'qty',
         'unit_price',
         'line_total',
+        'unit_cost',
     ];
 
     protected $casts = [
         'qty' => 'integer',
         'unit_price' => 'integer',
         'line_total' => 'integer',
+        'unit_cost' => 'integer',
     ];
 
     public function sale(): BelongsTo

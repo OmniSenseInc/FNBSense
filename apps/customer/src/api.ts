@@ -162,6 +162,18 @@ export function petakanMenu(mentah: KategoriMentah[]): Kategori[] {
 }
 
 /**
+ * Alamat foto produk yang bisa dipasang di <img>.
+ *
+ * `image_url` dari Catalog relatif terhadap CATALOG, bukan terhadap app ini —
+ * sepola bacaQris() untuk gambar QRIS. URL absolut dibiarkan utuh; string kosong
+ * atau null berarti tak ada foto.
+ */
+export function urlGambar(jalur: string | null): string | null {
+  if (typeof jalur !== 'string' || jalur.trim() === '') return null
+  return /^https?:\/\//.test(jalur) ? jalur : `${CATALOG}${jalur}`
+}
+
+/**
  * Cara bayar yang DIINGINKAN pelanggan. Kosakatanya sengaja sama dengan server
  * supaya tak ada penerjemahan di tengah jalan; layar yang menyebutnya "Tunai"
  * dan "E-Payment".
@@ -369,8 +381,27 @@ export async function kirimPesanan(payload: PayloadPesanan): Promise<Pesanan> {
   if (!res.ok) {
     // Pesan dibedakan karena tindakan pelanggannya beda: 429 = tunggu sebentar,
     // 422 = ada yang salah dengan pesanannya, sisanya = masalah di kami.
-    if (res.status === 429) throw new Error('Terlalu sering mencoba. Tunggu sebentar, lalu coba lagi.')
-    if (res.status === 422) throw new Error('Pesanan ditolak. Coba periksa lagi isinya.')
+    //
+    // 429 khusus PESANAN, bukan sekadar "terlalu sering": ini lahir dari limiter
+    // yang mengunci per QR meja. Pelanggan yang pesanannya baru saja dibatalkan
+    // kasir lalu ingin memesan ulang TIDAK bersalah — tapi embernya sudah penuh
+    // karena pesanan yang batal ikut terhitung. Kalimatnya harus menjelaskan itu,
+    // bukan menghukumnya dengan "kamu terlalu sering mencoba".
+    if (res.status === 429) {
+      throw new Error(
+        'Pesanan belum bisa dikirim dulu — meja ini kebanyakan pesanan dalam semenit. Tunggu sebentar, lalu tekan kirim lagi.',
+      )
+    }
+    if (res.status === 422) {
+      // Server punya dua macam penolakan: validasi field (message teknis,
+      // errors berisi peta field) dan penolakan bisnis yang DITULIS untuk
+      // dibaca pelanggan ("Bahan untuk Kopi Susu sedang habis..."). Yang
+      // kedua wajib diteruskan apa adanya — menggantinya dengan kalimat
+      // generik bikin pelanggan menebak-nebak sendiri.
+      const json = await res.json().catch(() => null)
+      const pesan = json && typeof json.message === 'string' && !json.errors ? json.message : null
+      throw new Error(pesan ?? 'Pesanan ditolak. Coba periksa lagi isinya.')
+    }
     if (res.status === 404) throw new Error('QR meja tidak dikenali. Scan ulang QR di meja.')
     throw new Error('Pesanan gagal dikirim. Coba lagi sebentar.')
   }

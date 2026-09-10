@@ -61,41 +61,27 @@ class CatalogRecipeClient
     }
 
     /**
-     * Nama bahan untuk sekumpulan ingredient_id — dipakai layar stok kasir.
+     * Semua bahan milik satu tenant — dipakai layar stok untuk menampilkan bahan
+     * yang BELUM pernah distok (belum punya baris saldo), supaya owner bisa
+     * restock dari sana.
      *
-     * Catatan nama kelas: berkas ini bernama "RecipeClient" karena resep yang
-     * lebih dulu ada. Nama bahan tinggal di sini, bukan di kelas kedua, supaya
-     * baseUrl/timeout/token/penanganan galat cuma punya satu tempat.
+     * Hiasan layar, bukan jalur uang — Catalog mati melempar
+     * CatalogUnavailableException, dan pemanggil yang memutuskan apakah layar
+     * jatuh atau menampilkan saldo tanpa daftar bahan.
      *
-     * Beda watak dari recipesForProducts() dan ini disengaja: yang itu di jalur
-     * uang, jadi Catalog mati harus MELEDAK supaya pesannya di-requeue dan stok
-     * tak dipotong salah. Yang ini cuma hiasan layar — nama yang hilang membuat
-     * kasir melihat UUID, sedangkan melempar galat membuat dia tak melihat stok
-     * sama sekali. Karena itu pemanggilnya yang menangkap, dan galatnya tetap
-     * dilempar dari sini supaya keputusan itu diambil sadar, bukan diwarisi.
-     *
-     * @param  array<int, string>  $ingredientIds  daftar id unik
-     * @return array<string, string> peta ingredient_id => name. Id yang tak
-     *                               dikenal Catalog tak muncul di peta.
+     * @return array<int, array{id: string, name: string, unit: ?string}>
      *
      * @throws CatalogUnavailableException Catalog tak terhubung / balas non-2xx / data tak dikenali.
      */
-    public function ingredientNames(string $tenantId, array $ingredientIds): array
+    public function ingredients(string $tenantId): array
     {
-        if ($ingredientIds === []) {
-            return [];
-        }
-
         try {
             $response = Http::baseUrl($this->baseUrl())
                 ->timeout($this->timeout())
                 ->connectTimeout($this->timeout())
                 ->acceptJson()
                 ->withHeaders(['X-Service-Token' => (string) config('services.catalog.service_token')])
-                ->get('/api/ingredient', [
-                    'tenant' => $tenantId,
-                    'ids' => implode(',', $ingredientIds),
-                ]);
+                ->get('/api/ingredient/all', ['tenant' => $tenantId]);
         } catch (ConnectionException $e) {
             throw new CatalogUnavailableException('Catalog tidak dapat dihubungi.', 0, $e);
         }
@@ -109,19 +95,21 @@ class CatalogRecipeClient
             throw new CatalogUnavailableException('Catalog membalas data yang tidak dikenali.');
         }
 
-        $peta = [];
+        $hasil = [];
         foreach ($data as $row) {
-            // Baris tanpa id atau tanpa nama string di-skip, bukan menumbangkan
-            // seluruh daftar: satu baris rusak paling jauh membuat satu bahan
-            // tampil sebagai UUID.
+            // Baris tanpa id atau tanpa nama di-skip, bukan menumbangkan daftar.
             if (! isset($row['id']) || ! is_string($row['name'] ?? null)) {
                 continue;
             }
 
-            $peta[(string) $row['id']] = $row['name'];
+            $hasil[] = [
+                'id' => (string) $row['id'],
+                'name' => $row['name'],
+                'unit' => is_string($row['unit'] ?? null) ? $row['unit'] : null,
+            ];
         }
 
-        return $peta;
+        return $hasil;
     }
 
     /**

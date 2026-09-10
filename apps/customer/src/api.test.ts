@@ -179,3 +179,36 @@ describe('petakanMenu', () => {
     ])
   })
 })
+
+describe('kirimPesanan — penolakan 422', () => {
+  it('meneruskan pesan bisnis server yang ditulis untuk pelanggan', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        message: 'Bahan untuk Kopi Susu sedang habis. Silakan pilih menu lain.',
+      }),
+    }))
+    const { kirimPesanan } = await import('./api')
+    await expect(kirimPesanan({} as never)).rejects.toThrow(
+      'Bahan untuk Kopi Susu sedang habis. Silakan pilih menu lain.',
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('tetap generik saat 422 adalah validasi field teknis', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        message: 'The items field is required.',
+        errors: { items: ['The items field is required.'] },
+      }),
+    }))
+    const { kirimPesanan } = await import('./api')
+    await expect(kirimPesanan({} as never)).rejects.toThrow(
+      'Pesanan ditolak. Coba periksa lagi isinya.',
+    )
+    vi.unstubAllGlobals()
+  })
+})

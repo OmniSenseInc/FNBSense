@@ -9,11 +9,12 @@ vi.mock('./api', () => ({
   ambilBahan: vi.fn(),
   buatBahan: vi.fn(),
   hapusBahan: vi.fn(),
+  ubahHargaBeli: vi.fn(),
   SATUAN: ['g', 'ml', 'pcs'],
   SESI_HABIS: 'SESI_HABIS',
 }))
 
-const bahan = (ubah = {}) => ({ id: 'b1', nama: 'Susu', satuan: 'ml', ...ubah })
+const bahan = (ubah = {}) => ({ id: 'b1', nama: 'Susu', satuan: 'ml', hargaBeli: 0, ...ubah })
 
 function tampilkan(onKeluar: () => void = () => {}) {
   return render(
@@ -36,7 +37,7 @@ describe('menambah bahan', () => {
     fireEvent.change(screen.getByLabelText('Satuan'), { target: { value: 'g' } })
     fireEvent.click(screen.getByRole('button', { name: 'Tambah bahan' }))
 
-    await vi.waitFor(() => expect(buatBahan).toHaveBeenCalledWith('Biji Kopi', 'g'))
+    await vi.waitFor(() => expect(buatBahan).toHaveBeenCalledWith('Biji Kopi', 'g', 0))
   })
 
   it('nama kosong ditolak tanpa menghubungi server', async () => {
@@ -57,7 +58,7 @@ describe('menambah bahan', () => {
     fireEvent.change(await screen.findByLabelText('Nama'), { target: { value: '  Gula  ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Tambah bahan' }))
 
-    await vi.waitFor(() => expect(buatBahan).toHaveBeenCalledWith('Gula', 'g'))
+    await vi.waitFor(() => expect(buatBahan).toHaveBeenCalledWith('Gula', 'g', 0))
   })
 })
 

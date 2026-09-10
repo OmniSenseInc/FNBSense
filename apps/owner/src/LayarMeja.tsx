@@ -160,16 +160,16 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
   const alamatSiap = contoh === undefined || urlMeja(contoh.qrToken) !== null
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
-        <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-          ← Antrean
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 print:hidden">
+        <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
+          ← Beranda
         </Link>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-md border border-stone-300 px-3 py-2 text-sm"
           >
             Cetak QR
           </button>
@@ -191,7 +191,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
           // Menolak menggambar lebih baik daripada menggambar yang salah:
           // stiker QR dicetak lalu ditempel, dan yang keliru baru ketahuan dari
           // pelanggan yang gagal memesan.
-          <p className="mb-4 rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
+          <p className="mb-4 rounded-md bg-sage-100 px-3 py-2 text-sm text-sage-900">
             Alamat app pelanggan belum disetel (<code>VITE_CUSTOMER_URL</code>), jadi QR belum
             bisa digambar. Isi dulu, lalu muat ulang halaman ini.
           </p>
@@ -205,19 +205,19 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
             placeholder="Meja 1"
             value={labelBaru}
             onChange={(e) => setLabelBaru(e.target.value)}
-            className="grow rounded-md border border-slate-300 px-3 py-2 text-base"
+            className="grow rounded-md border border-stone-300 px-3 py-2 text-base"
           />
           <button
             type="submit"
             disabled={sibuk}
-            className="rounded-md bg-slate-900 px-4 py-2 text-base font-semibold text-white disabled:opacity-50"
+            className="rounded-md bg-stone-900 px-4 py-2 text-base font-semibold text-white disabled:opacity-50"
           >
             Tambah
           </button>
         </form>
 
         {daftar !== null && daftar.length === 0 && (
-          <p className="py-16 text-center text-sm text-slate-600">
+          <p className="py-16 text-center text-sm text-stone-600">
             Belum ada meja. Tambahkan satu, lalu cetak QR-nya dan tempel di mejanya.
           </p>
         )}
@@ -231,7 +231,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                 key={meja.id}
                 // Meja nonaktif tak ikut tercetak: QR-nya sudah ditolak server,
                 // jadi mencetaknya cuma menghasilkan stiker yang tak berfungsi.
-                className={`rounded-md border border-slate-200 bg-white p-4 print:break-after-page print:border-0 ${
+                className={`rounded-md border border-stone-200 bg-white p-4 print:break-after-page print:border-0 ${
                   meja.aktif ? '' : 'print:hidden'
                 }`}
               >
@@ -243,20 +243,20 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                         maxLength={50}
                         value={ubahNama}
                         onChange={(e) => setUbahNama(e.target.value)}
-                        className="grow rounded-md border border-slate-300 px-3 py-2 text-base"
+                        className="grow rounded-md border border-stone-300 px-3 py-2 text-base"
                       />
                       <button
                         type="button"
                         disabled={sibuk}
                         onClick={() => simpanNama(meja)}
-                        className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        className="rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
                       >
                         Simpan
                       </button>
                       <button
                         type="button"
                         onClick={() => setAksi(null)}
-                        className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        className="rounded-md border border-stone-300 px-3 py-2 text-sm"
                       >
                         Batal
                       </button>
@@ -265,7 +265,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                     <p className="text-lg font-semibold print:text-3xl">
                       {meja.label}
                       {!meja.aktif && (
-                        <span className="ml-2 rounded-md bg-slate-100 px-2 py-1 text-sm font-normal text-slate-600 print:hidden">
+                        <span className="ml-2 rounded-md bg-stone-100 px-2 py-1 text-sm font-normal text-stone-600 print:hidden">
                           Nonaktif
                         </span>
                       )}
@@ -287,7 +287,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                     />
                     {/* Alamatnya ikut ditulis kecil: kalau kamera pelanggan
                         bermasalah, mengetik masih mungkin. */}
-                    <span className="break-all text-center text-sm text-slate-500">{alamat}</span>
+                    <span className="break-all text-center text-sm text-stone-500">{alamat}</span>
                   </div>
                 )}
 
@@ -299,7 +299,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                       setUbahNama(meja.label)
                       setAksi({ id: meja.id, mode: 'nama' })
                     }}
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
+                    className="rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50"
                   >
                     Ubah nama
                   </button>
@@ -308,7 +308,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                     type="button"
                     disabled={sibuk}
                     onClick={() => setAktif(meja, !meja.aktif)}
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
+                    className="rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50"
                   >
                     {meja.aktif ? 'Nonaktifkan' : 'Aktifkan'}
                   </button>
@@ -334,7 +334,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                         <button
                           type="button"
                           onClick={() => setAksi(null)}
-                          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                          className="rounded-md border border-stone-300 px-3 py-2 text-sm"
                         >
                           Batal
                         </button>
@@ -345,7 +345,7 @@ export default function LayarMeja({ onKeluar }: { onKeluar: () => void }) {
                       type="button"
                       disabled={sibuk}
                       onClick={() => setAksi({ id: meja.id, mode: 'putar' })}
-                      className="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
+                      className="rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50"
                     >
                       Ganti QR
                     </button>

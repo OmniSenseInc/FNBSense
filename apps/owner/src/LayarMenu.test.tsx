@@ -23,8 +23,11 @@ vi.mock('./api', () => ({
   buatProduk: vi.fn(),
   buatResep: vi.fn(),
   hapusResep: vi.fn(),
+  ubahHargaBeli: vi.fn(),
   ubahProduk: vi.fn(),
   ubahTakaran: vi.fn(),
+  unggahFotoProduk: vi.fn(),
+  urlGambar: vi.fn(),
   SESI_HABIS: 'SESI_HABIS',
 }))
 
@@ -35,6 +38,7 @@ const produk = (ubah = {}) => ({
   harga: 25000,
   kategoriId: 'k1' as string | null,
   tersedia: true,
+  gambarUrl: null,
   ...ubah,
 })
 const bahan = (ubah = {}) => ({ id: 'b1', nama: 'Susu', satuan: 'ml', ...ubah })
@@ -62,6 +66,31 @@ function siapkan(
 
 beforeEach(() => vi.clearAllMocks())
 afterEach(cleanup)
+
+describe('HPP produk', () => {
+  it('menampilkan HPP dari resep × harga beli bahan', async () => {
+    siapkan(
+      [kategori()],
+      [produk()],
+      [bahan({ hargaBeli: 20 })],
+      [resep({ takaran: 150 })],
+    )
+
+    tampilkan()
+
+    // 150 ml × Rp 20 = Rp 3.000.
+    expect(await screen.findByText(/HPP Rp 3\.000/)).toBeTruthy()
+  })
+
+  it('menandai HPP belum kehitung saat bahan belum dihargai', async () => {
+    // Resep ada (bawaan siapkan), tapi bahan tanpa hargaBeli -> HPP 0.
+    siapkan()
+
+    tampilkan()
+
+    expect(await screen.findByText(/belum kehitung/)).toBeTruthy()
+  })
+})
 
 describe('kategori wajib', () => {
   it('menolak produk tanpa kategori SEBELUM menghubungi server', async () => {

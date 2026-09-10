@@ -72,6 +72,13 @@ class OrderPaidConsumer
             $totals = $payload['totals'];
             $promotion = $payload['promotion'] ?? null;
 
+            // HPP total = Σ(unit_cost × qty). unit_cost opsional (event lama
+            // tak ber-HPP) -> 0, supaya event lama tetap tercatat tanpa error.
+            $cogsTotal = 0;
+            foreach ($payload['items'] as $item) {
+                $cogsTotal += (int) ($item['unit_cost'] ?? 0) * (int) $item['qty'];
+            }
+
             $sale = Sale::create([
                 'order_id' => $payload['order_id'],
                 'tenant_id' => $tenantId,
@@ -82,6 +89,7 @@ class OrderPaidConsumer
                 'service_charge' => (int) $totals['service_charge'],
                 'tax' => (int) $totals['tax'],
                 'grand_total' => (int) $totals['grand_total'],
+                'cogs_total' => $cogsTotal,
                 'promotion_id' => $promotion['id'] ?? null,
                 'promotion_name' => $promotion['name'] ?? null,
                 'promotion_template' => $promotion['template'] ?? null,
@@ -98,6 +106,7 @@ class OrderPaidConsumer
                     'qty' => $qty,
                     'unit_price' => $unitPrice,
                     'line_total' => $unitPrice * $qty, // dihitung ulang, dikunci CHECK di DB
+                    'unit_cost' => (int) ($item['unit_cost'] ?? 0),
                 ]);
             }
 
@@ -190,6 +199,10 @@ class OrderPaidConsumer
                 || ! $this->nonEmptyString($item['product_id'] ?? null)
                 || ! $this->nonNegativeInt($item['qty'] ?? null) || (int) $item['qty'] < 1
                 || ! $this->nonNegativeInt($item['unit_price'] ?? null)) {
+                return false;
+            }
+            // unit_cost opsional; kalau hadir, wajib integer tak-negatif (kolom unsigned).
+            if (array_key_exists('unit_cost', $item) && ! $this->nonNegativeInt($item['unit_cost'])) {
                 return false;
             }
         }

@@ -2,15 +2,25 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { ambilPesanan, type Pesanan } from './api'
 import { rupiah } from './format'
-import type { EntriPesanan } from './pesananSaya'
-import { TAMPILAN, jelaskanStatus } from './status'
+import {
+  buangPesananSelesai,
+  kosongkanPesananSaya,
+  kunciPesanan,
+  type EntriPesanan,
+} from './pesananSaya'
+import { TAMPILAN, jelaskanStatus, pesananMasihAktif } from './status'
 
 /**
- * Popup "Pesanan saya" — apa yang sudah dipesan dari HP ini di meja ini.
+ * Popup "Pesanan saya" — apa yang SEDANG BERJALAN dari HP ini di meja ini.
  *
  * Alasannya sederhana: pelanggan yang sudah membayar lalu kembali ke menu untuk
  * menambah minum tak lagi punya jalan melihat pesanan sebelumnya, dan nomor
  * pesanannya cuma lewat sekali di layar status.
+ *
+ * Yang ditampilkan HANYA pesanan yang masih berjalan (menunggu bayar / sedang
+ * dibuat). Pesanan yang sudah siap diantar, dibatalkan, atau kedaluwarsa
+ * dianggap selesai dan tak ditampilkan — kalau ikut, pesanan pelanggan yang
+ * sudah pergi akan terbawa ke pelanggan berikutnya yang duduk di meja yang sama.
  *
  * Diambil saat DIBUKA, bukan di-polling terus: ini tempat yang didatangi, bukan
  * pekerjaan yang datang sendiri. Memuat ulang tiap lima detik di latar halaman
@@ -21,16 +31,26 @@ export default function DialogPesananSaya({
   qrToken,
   terbuka,
   onTutup,
+  onUbah,
 }: {
   entri: EntriPesanan[]
   qrToken: string
   terbuka: boolean
   onTutup: () => void
+  /** Sinkronkan daftar entri ke induk setelah dibersihkan (buang yang selesai / tombol Selesai). */
+  onUbah: (entri: EntriPesanan[]) => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const [daftar, setDaftar] = useState<Pesanan[]>([])
   const [memuat, setMemuat] = useState(false)
   const [galat, setGalat] = useState(false)
+  const [konfirmasiSelesai, setKonfirmasiSelesai] = useState(false)
+
+  // Entri terbaru selalu tersedia lewat ref. Effect pemuatan di bawah hanya
+  // jalan saat popup DIBUKA — bukan tiap `entri` berubah — supaya pembersihan
+  // otomatis tak memicu muat-ulang yang bikin layar berkedip "Memuat…".
+  const entriRef = useRef(entri)
+  entriRef.current = entri
 
   // showModal(), bukan atribut `open`: tanpa itu tak ada backdrop, tak ada
   // kunci fokus, dan tombol back HP tak menutup apa pun. Pelajaran yang sama
@@ -47,29 +67,50 @@ export default function DialogPesananSaya({
     if (!terbuka) return
 
     let batal = false
+    const daftarEntri = entriRef.current
     setMemuat(true)
     setGalat(false)
+    setKonfirmasiSelesai(false)
 
     // allSettled, bukan all: satu pesanan yang gagal diambil (sudah dihapus,
     // jaringan putus di tengah) tak boleh mengosongkan seluruh daftar. Yang
     // gagal cukup tak muncul.
-    Promise.allSettled(entri.map((e) => ambilPesanan(e.id))).then((hasil) => {
+    Promise.allSettled(daftarEntri.map((e) => ambilPesanan(e.id))).then((hasil) => {
       if (batal) return
 
       const berhasil = hasil
         .filter((h): h is PromiseFulfilledResult<Pesanan> => h.status === 'fulfilled')
         .map((h) => h.value)
 
-      setDaftar(berhasil)
+      const aktif = berhasil.filter((p) => pesananMasihAktif(p.status, p.readyAt))
+      const idSelesai = berhasil
+        .filter((p) => !pesananMasihAktif(p.status, p.readyAt))
+        .map((p) => p.id)
+
+      // Buang yang sudah selesai dari catatan HP — bukan cuma dari layar —
+      // supaya hitungan tombol "Pesanan saya" di menu ikut benar di kunjungan
+      // berikutnya, dan tak menumpuk pesanan yang sudah lewat.
+      if (idSelesai.length > 0) {
+        onUbah(buangPesananSelesai(kunciPesanan(qrToken), idSelesai))
+      }
+
+      setDaftar(aktif)
       // Galat hanya kalau NOL yang berhasil — sebagian berhasil masih berguna.
-      setGalat(berhasil.length === 0 && entri.length > 0)
+      setGalat(berhasil.length === 0 && daftarEntri.length > 0)
       setMemuat(false)
     })
 
     return () => {
       batal = true
     }
-  }, [terbuka, entri])
+  }, [terbuka, qrToken, onUbah])
+
+  const selesaikan = () => {
+    kosongkanPesananSaya(kunciPesanan(qrToken))
+    onUbah([])
+    setKonfirmasiSelesai(false)
+    onTutup()
+  }
 
   return (
     <dialog
@@ -102,7 +143,7 @@ export default function DialogPesananSaya({
         )}
 
         {!memuat && !galat && daftar.length === 0 && (
-          <p className="text-sm text-slate-600">Belum ada pesanan dari HP ini hari ini.</p>
+          <p className="text-sm text-slate-600">Tidak ada pesanan berjalan dari HP ini hari ini.</p>
         )}
 
         <ul className="flex flex-col gap-3">
@@ -175,6 +216,41 @@ export default function DialogPesananSaya({
           })}
         </ul>
       </div>
+
+      {/* Tombol "Selesai" — membersihkan catatan supaya pelanggan berikutnya di
+          meja yang sama mulai dari nol. Konfirmasi dua-langkah, bukan dialog
+          bawaan: tombolnya sendiri berubah jadi "Yakin?", supaya tak ada
+          jendela asing yang mengejutkan. */}
+      {entri.length > 0 && (
+        <div className="border-t border-slate-200 p-3">
+          {konfirmasiSelesai ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setKonfirmasiSelesai(false)}
+                className="h-11 flex-1 rounded-md border border-slate-300 text-sm font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={selesaikan}
+                className="h-11 flex-1 rounded-md bg-slate-900 text-sm font-semibold text-white"
+              >
+                Ya, bersihkan
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setKonfirmasiSelesai(true)}
+              className="h-11 w-full rounded-md border border-slate-300 text-sm font-semibold text-slate-600"
+            >
+              Selesai makan — bersihkan riwayat
+            </button>
+          )}
+        </div>
+      )}
     </dialog>
   )
 }

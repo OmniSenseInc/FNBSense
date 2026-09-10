@@ -1,0 +1,104 @@
+import { describe, expect, it } from 'vitest'
+import { keJumlah, labelMeja, sisaMenit, tanggalJam } from './format'
+
+describe('keJumlah', () => {
+  it.each([
+    ['bulat', '18', 18],
+    ['desimal satu angka', '1.5', 1.5],
+    ['desimal dua angka', '0.25', 0.25],
+    ['berspasi', '  7 ', 7],
+    ['nol', '0', 0],
+  ])('menerima %s', (_nama, teks, harap) => {
+    expect(keJumlah(teks as string)).toBe(harap)
+  })
+
+  it.each([
+    ['pemisah ribuan', '1.000'],
+    ['koma desimal', '1,5'],
+    ['negatif', '-3'],
+    ['kosong', ''],
+    ['bukan angka', 'banyak'],
+  ])('menolak %s', (_nama, teks) => {
+    // null, bukan 0: nol adalah takaran/hitungan yang SAH tapi bermakna lain.
+    // Menyamakan "tak terbaca" dengan "nol" adalah cara opname menghapus saldo
+    // dan resep berhenti memotong stok tanpa satu pun pesan galat.
+    expect(keJumlah(teks as string)).toBeNull()
+  })
+})
+
+describe('tanggalJam', () => {
+  it('membawa tanggalnya, bukan cuma jam', () => {
+    // Inbox pemberitahuan menyimpan 100 terakhir dan bisa membentang seminggu.
+    // Tanpa tanggal, peringatan stok tiga hari lalu terbaca sebagai kejadian
+    // siang tadi. Yang diperiksa keberadaan tanggalnya, bukan ejaan bulannya —
+    // ejaan itu milik ICU dan berubah antar-versi Node.
+    const hasil = tanggalJam('2026-08-02T14:05:00+07:00')
+
+    expect(hasil).toMatch(/\b2\b/)
+    expect(hasil).toMatch(/14[.:]05/)
+  })
+
+  it('tanggal tak terbaca jadi strip, bukan "Invalid Date"', () => {
+    expect(tanggalJam(null)).toBe('—')
+    expect(tanggalJam('bukan tanggal')).toBe('—')
+  })
+})
+
+describe('labelMeja', () => {
+  it('memakai nama meja yang ditulis owner apa adanya', () => {
+    expect(labelMeja('Meja 4', 'dine_in')).toBe('Meja 4')
+  })
+
+  it('pesanan bawa pulang memang tak punya meja', () => {
+    expect(labelMeja(null, 'takeaway')).toBe('Bawa pulang')
+  })
+
+  it('dine-in tanpa meja tidak dikarang jadi "Bawa pulang"', () => {
+    // Mejanya dihapus setelah pesanan dibuat. Menulis "Bawa pulang" di sini
+    // menyuruh kasir mencari orang yang tak pernah antre di depannya.
+    expect(labelMeja(null, 'dine_in')).toBeNull()
+  })
+
+  it('tipe yang tak dikenal tidak menghasilkan penanda apa pun', () => {
+    expect(labelMeja(null, null)).toBeNull()
+  })
+})
+
+/**
+ * Semua tanggal ditulis dengan offset +07:00 eksplisit, dan "sekarang" disuntik
+ * sebagai angka — jadi hasilnya tak pernah bergantung pada zona waktu mesin
+ * yang menjalankan test.
+ */
+describe('sisaMenit', () => {
+  const sekarang = Date.parse('2026-07-31T14:00:00+07:00')
+
+  it('menghitung sisa menit sampai tenggat', () => {
+    expect(sisaMenit('2026-07-31T14:07:00+07:00', sekarang)).toBe(7)
+  })
+
+  it('membulatkan KE ATAS, jadi sisa waktu tak tampil habis lebih cepat dari kenyataan', () => {
+    // Tersisa 30 detik. Pembulatan ke bawah menulis "0" -> kasir menyimpulkan
+    // pesanan sudah lewat batas padahal server masih menerimanya dengan normal.
+    expect(sisaMenit('2026-07-31T14:00:30+07:00', sekarang)).toBe(1)
+  })
+
+  it('tepat di detik tenggat sudah dihitung lewat', () => {
+    expect(sisaMenit('2026-07-31T14:00:00+07:00', sekarang)).toBe(0)
+  })
+
+  it('tenggat yang terlewat bernilai negatif, tidak dijepit ke nol', () => {
+    // Dibiarkan negatif supaya "belum lewat", "pas lewat", dan "tak punya
+    // tenggat" tetap tiga keadaan yang berbeda di layar.
+    expect(sisaMenit('2026-07-31T13:50:00+07:00', sekarang)).toBe(-10)
+  })
+
+  it.each([
+    ['tak ada', null],
+    ['kosong', ''],
+    ['bukan tanggal', 'segera'],
+  ])('mengembalikan null untuk tenggat %s, bukan angka', (_nama, nilai) => {
+    // NaN atau 0 di sini akan dirender sebagai "lewat batas" — kasir diberi
+    // kesimpulan yang dikarang dari data yang sebenarnya tak terbaca.
+    expect(sisaMenit(nilai, sekarang)).toBeNull()
+  })
+})

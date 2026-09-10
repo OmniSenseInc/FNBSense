@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ambilAntrean,
   bacaToken,
+  cekAkunAktif,
   peranSaya,
   petakanPesanan,
   petakanSetelan,
@@ -243,6 +244,28 @@ describe('petakanPesanan', () => {
     expect(hasil.items[0].hargaSatuan).toBe(22000)
   })
 
+  it('memetakan potongan promo dan nama promonya', () => {
+    // Server yang menghitung diskon; layar cuma meneruskannya. Tanpa field ini
+    // kasir melihat total "kurang" tanpa tahu ada promo yang dipotong di balik.
+    const hasil = petakanPesanan({
+      ...mentah,
+      gross_subtotal: 50000,
+      discount_total: 6000,
+      subtotal: 44000,
+      promotion: { name: 'Diskon 10%' },
+    })
+
+    expect(hasil.grossSubtotal).toBe(50000)
+    expect(hasil.diskon).toBe(6000)
+    expect(hasil.promo).toBe('Diskon 10%')
+  })
+
+  it('promo yang tak ada menjadi null, bukan teks "undefined"', () => {
+    // String(undefined) menghasilkan "undefined" — nama promo palsu yang tampil
+    // di layar seolah ada diskon padahal tidak.
+    expect(petakanPesanan(mentah).promo).toBeNull()
+  })
+
   it('memetakan label meja dan tipe pesanan', () => {
     // Nama fieldnya `table_label`, bukan `table`: server sengaja mengirim
     // labelnya saja supaya qr_token meja tak punya jalan ikut terserialisasi.
@@ -330,5 +353,47 @@ describe('token kedaluwarsa di tengah shift', () => {
 
     await expect(ambilAntrean()).rejects.toThrow(/tidak bisa diproses/)
     expect(bacaToken()).toBe('sehat')
+  })
+})
+
+describe('cekAkunAktif', () => {
+  it('akun hidup (200) berarti masih boleh lanjut', async () => {
+    pasangPenyimpanan({ 'fnb.staff.token': 'sehat' })
+    vi.stubGlobal('fetch', vi.fn(async () => respons(200, {})))
+
+    await expect(cekAkunAktif()).resolves.toBe(true)
+  })
+
+  it('akun dihapus/dinonaktifkan (403) = mati, harus keluar', async () => {
+    pasangPenyimpanan({ 'fnb.staff.token': 'sehat' })
+    vi.stubGlobal('fetch', vi.fn(async () => respons(403, {})))
+
+    await expect(cekAkunAktif()).resolves.toBe(false)
+  })
+
+  it('token kedaluwarsa (401) bukan soal akun — jangan suruh keluar', async () => {
+    pasangPenyimpanan({ 'fnb.staff.token': 'lama' })
+    vi.stubGlobal('fetch', vi.fn(async () => respons(401, {})))
+
+    await expect(cekAkunAktif()).resolves.toBe(true)
+  })
+
+  it('jaringan gagal bukan salah akun', async () => {
+    pasangPenyimpanan({ 'fnb.staff.token': 'sehat' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('jaringan putus')
+      }),
+    )
+
+    await expect(cekAkunAktif()).resolves.toBe(true)
+  })
+
+  it('tanpa token = mati (tak ada sesi yang bisa dipertahankan)', async () => {
+    pasangPenyimpanan({})
+    vi.stubGlobal('fetch', vi.fn(async () => respons(200, {})))
+
+    await expect(cekAkunAktif()).resolves.toBe(false)
   })
 })

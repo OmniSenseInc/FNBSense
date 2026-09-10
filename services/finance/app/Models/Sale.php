@@ -23,6 +23,7 @@ class Sale extends Model
         'service_charge',
         'tax',
         'grand_total',
+        'cogs_total',
         'promotion_id',
         'promotion_name',
         'promotion_template',
@@ -37,6 +38,7 @@ class Sale extends Model
         'service_charge' => 'integer',
         'tax' => 'integer',
         'grand_total' => 'integer',
+        'cogs_total' => 'integer',
         'paid_at' => 'datetime',
     ];
 

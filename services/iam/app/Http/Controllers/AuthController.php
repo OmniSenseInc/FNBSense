@@ -30,6 +30,15 @@ class AuthController extends Controller
      */
     public function register(Request $request): JsonResponse
     {
+        // Gerbang registrasi: produksi TIDAK membuka pendaftaran mandiri
+        // (model bisnis onboarding terkelola). Nyalakan via REGISTER_OPEN=true
+        // hanya saat jalur signup sengaja dibuka.
+        if (! config('auth.register_open')) {
+            return response()->json([
+                'message' => 'Pendaftaran mandiri sedang ditutup. Hubungi pengelola untuk membuat akun.',
+            ], 403);
+        }
+
         $validated = $request->validate([
             'business_name' => ['required', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
@@ -145,27 +154,65 @@ class AuthController extends Controller
 
     /**
      * Profil user pemilik token saat ini.
+     *
+     * Sengaja TIDAK di belakang middleware `auth:api`: middleware itu
+     * menyatukan dua keadaan yang beda jadi satu 401 — token kedaluwarsa/rusak/
+     * diblacklist DAN akun yang dihapus setelah token terbit. Padahal tindakan
+     * yang tepat beda: yang pertama cukup ditukar tokennya (refresh), yang
+     * kedua akunnya sudah mati dan layarnya harus keluar SEKARANG. Di sini:
+     *   401 = token yang bermasalah (urusannya refresh),
+     *   403 = akun dihapus / dinonaktifkan (urusannya logout dari app).
      */
     public function me(): JsonResponse
     {
-        $user = $this->guard()->user();
-        if (! $user instanceof User || ! $this->hasActiveBusinessContext($user)) {
+        // user() memvalidasi penuh: tanda tangan, masa berlaku, dan blacklist.
+        // Gagal total (token rusak/kadaluwarsa/diblacklist) — lempar atau null —
+        // dua-duanya menuju 401, bukan kabar soal akun.
+        try {
+            $user = $this->guard()->user();
+        } catch (JWTException) {
+            return response()->json(['message' => 'Token tidak valid atau sudah kedaluwarsa.'], 401);
+        }
+
+        if ($user instanceof User && $this->hasActiveBusinessContext($user)) {
+            // Daftar-IZIN eksplisit, bukan mengandalkan $hidden pada model.
+            // Dengan blocklist, kolom sensitif yang ditambahkan nanti ikut bocor
+            // kecuali seseorang ingat menambahkannya ke $hidden. respondWithToken()
+            // dan StaffController::present() sudah memakai pola ini.
+            return response()->json([
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role?->value,
+                'tenant_id' => $user->tenant_id,
+                'outlet_id' => $user->outlet_id,
+                'is_active' => $user->is_active,
+            ]);
+        }
+
+        if ($user instanceof User) {
+            // Token sah dan usernya KETEMU, tapi is_active nol / tenant-outlet mati.
             return response()->json(['message' => 'Konteks akun tidak aktif atau tidak valid.'], 403);
         }
 
-        // Daftar-IZIN eksplisit, bukan mengandalkan $hidden pada model.
-        // Dengan blocklist, kolom sensitif yang ditambahkan nanti ikut bocor
-        // kecuali seseorang ingat menambahkannya ke $hidden. respondWithToken()
-        // dan StaffController::present() sudah memakai pola ini.
-        return response()->json([
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'role' => $user->role?->value,
-            'tenant_id' => $user->tenant_id,
-            'outlet_id' => $user->outlet_id,
-            'is_active' => $user->is_active,
-        ]);
+        // user() tak menemukan siapa pun: bedakan akun yang DIHAPUS (403) dari
+        // token yang memang tak bisa dipakai (401). payload() melempar kalau
+        // token rusak/kadaluwarsa; kalau selamat, sub-nya dicek ke DB — dan
+        // SoftDeletes di User membuat akun yang sudah dihapus tak terlihat.
+        try {
+            $sub = $this->guard()->payload()->get('sub');
+        } catch (JWTException) {
+            return response()->json(['message' => 'Token tidak valid atau sudah kedaluwarsa.'], 401);
+        }
+
+        $ada = is_string($sub) && User::query()->whereKey($sub)->exists();
+
+        return response()->json(
+            $ada
+                ? ['message' => 'Token tidak valid atau sudah kedaluwarsa.']
+                : ['message' => 'Konteks akun tidak aktif atau tidak valid.'],
+            $ada ? 401 : 403,
+        );
     }
 
     /**

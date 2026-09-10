@@ -29,11 +29,12 @@ FROM dunglas/frankenphp:1-php8.5-alpine
 #
 # pdo_mysql: semua service. sockets+bcmath: php-amqplib (relay & consumer).
 # pcntl: daemon butuh sinyal supaya `docker stop` berhenti rapi, bukan dibunuh.
+# gd: re-encode gambar QRIS menjadi PNG (SettingController::reencode).
 #
 # TIDAK dipasang: opcache (sudah ada di image dasar — memintanya cuma
 # menghasilkan peringatan), intl dan zip (tak satu pun kode di kelima service
 # menyentuhnya; keduanya menarik icu-dev dan libzip-dev yang berat).
-RUN install-php-extensions pdo_mysql bcmath sockets pcntl
+RUN install-php-extensions pdo_mysql bcmath sockets pcntl gd
 
 # php.ini bawaan image adalah "development": display_errors menyala dan jejak
 # stack ikut terkirim ke browser. Di jalur uang itu bocornya nama tabel.
@@ -66,7 +67,15 @@ COPY . .
 # karena yang satu bisa lupa: image yang terlanjur membawa .env pengembangan
 # akan diam-diam memakai kredensial itu di produksi kalau satu variabel env
 # saja luput di-set — dan tak ada yang memberi tahu.
-RUN rm -f .env .env.* \
+#
+# bootstrap/cache/*.php ikut dihapus untuk alasan yang sama dengan
+# .dockerignore: packages.php/services.php hasil generate di mesin
+# pengembangan memuat provider DARI dependensi dev (Collision, Pail, ...) yang
+# tidak ada di image --no-dev. Kalau satu service lupa .dockerignore-nya,
+# build mati dengan "Class ... not found" yang tak menyebut berkas ini sama
+# sekali (terbukti: finance, 2026-08-12). Menghapusnya di sini membuat
+# Dockerfile ini kebal terhadap cache basi apa pun yang ikut tersalin.
+RUN rm -f .env .env.* bootstrap/cache/*.php \
     && composer dump-autoload --no-dev --optimize --classmap-authoritative \
     && php artisan package:discover --ansi \
     && php artisan storage:link --force \

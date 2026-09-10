@@ -31,6 +31,9 @@ volumes:
   # tiap kali ada perbaikan sekecil apa pun yang dideploy — kafe kehilangan
   # jalur bayarnya di tengah hari tanpa ada yang menyentuh setelan.
   qris:
+  # Foto produk yang diunggah owner — alasan sama persis dengan `qris`: tanpa
+  # volume, `up -d --build` menghapus seluruh foto menu tiap deploy.
+  catalog-storage:
 
 # ---------------------------------------------------------------------------
 # Potongan yang dipakai ulang
@@ -241,13 +244,14 @@ services:
       JWT_ALGO: RS256
       JWT_PRIVATE_KEY: file:///keys/jwt-private.pem
       JWT_PUBLIC_KEY: file:///keys/jwt-public.pem
+      REGISTER_OPEN: ${REGISTER_OPEN:-false}
     volumes: *keys
     depends_on: *depends
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=fnbsense"
       - "traefik.http.services.iam.loadbalancer.server.port=8080"
-      - "traefik.http.routers.iam.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/iam`)"
+      - "traefik.http.routers.iam.rule=(Host(`${DOMAIN_STAFF}`) || Host(`${DOMAIN_OWNER}`)) && PathPrefix(`/iam`)"
       - "traefik.http.routers.iam.entrypoints=websecure"
       - "traefik.http.routers.iam.tls.certresolver=le"
       - "traefik.http.routers.iam.middlewares=iam-strip"
@@ -287,7 +291,11 @@ services:
       # dituntut di dua tempat, satu-satunya yang bertambah adalah jumlah pesan
       # galat untuk satu variabel yang sama.
       INVENTORY_SERVICE_TOKEN: ${INVENTORY_SERVICE_TOKEN}
-    volumes: *keys
+    # Foto produk = unggahan berkas, sepola QRIS di Ordering: butuh volume yang
+    # hidup lebih lama daripada containernya, atau foto menu lenyap tiap deploy.
+    volumes:
+      - ./infra/keys:/keys:ro
+      - catalog-storage:/app/storage/app/public
     depends_on: *depends
     labels:
       - "traefik.enable=true"
@@ -319,7 +327,7 @@ services:
       # `recipe`/`ingredient`/`internal` dijaga token service dan tak ada
       # urusannya dengan browser mana pun — domain staf sama terbukanya ke
       # internet dengan domain pelanggan.
-      - "traefik.http.routers.catalog-staf.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/catalog`) && !Path(`/catalog/api/recipe`) && !Path(`/catalog/api/ingredient`) && !PathPrefix(`/catalog/api/internal`)"
+      - "traefik.http.routers.catalog-staf.rule=(Host(`${DOMAIN_STAFF}`) || Host(`${DOMAIN_OWNER}`)) && PathPrefix(`/catalog`) && !Path(`/catalog/api/recipe`) && !Path(`/catalog/api/ingredient`) && !PathPrefix(`/catalog/api/internal`)"
       - "traefik.http.routers.catalog-staf.entrypoints=websecure"
       - "traefik.http.routers.catalog-staf.tls.certresolver=le"
       - "traefik.http.routers.catalog-staf.middlewares=catalog-strip"
@@ -373,7 +381,7 @@ services:
       - "traefik.http.routers.ordering-pelanggan.entrypoints=websecure"
       - "traefik.http.routers.ordering-pelanggan.tls.certresolver=le"
       - "traefik.http.routers.ordering-pelanggan.middlewares=ordering-strip"
-      - "traefik.http.routers.ordering-kasir.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/ordering`)"
+      - "traefik.http.routers.ordering-kasir.rule=(Host(`${DOMAIN_STAFF}`) || Host(`${DOMAIN_OWNER}`)) && PathPrefix(`/ordering`)"
       - "traefik.http.routers.ordering-kasir.entrypoints=websecure"
       - "traefik.http.routers.ordering-kasir.tls.certresolver=le"
       - "traefik.http.routers.ordering-kasir.middlewares=ordering-strip"
@@ -412,7 +420,7 @@ services:
       # Hanya domain STAF. Tak ada padanannya di domain pelanggan — saldo bahan
       # bukan urusan orang yang memesan kopi, dan rute yang tak pernah dipakai
       # tetap rute yang bisa dipanggil.
-      - "traefik.http.routers.inventory.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/inventory`)"
+      - "traefik.http.routers.inventory.rule=(Host(`${DOMAIN_STAFF}`) || Host(`${DOMAIN_OWNER}`)) && PathPrefix(`/inventory`)"
       - "traefik.http.routers.inventory.entrypoints=websecure"
       - "traefik.http.routers.inventory.tls.certresolver=le"
       - "traefik.http.routers.inventory.middlewares=inventory-strip"
@@ -451,7 +459,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=fnbsense"
       - "traefik.http.services.notification.loadbalancer.server.port=8080"
-      - "traefik.http.routers.notification.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/notification`)"
+      - "traefik.http.routers.notification.rule=(Host(`${DOMAIN_STAFF}`) || Host(`${DOMAIN_OWNER}`)) && PathPrefix(`/notification`)"
       - "traefik.http.routers.notification.entrypoints=websecure"
       - "traefik.http.routers.notification.tls.certresolver=le"
       - "traefik.http.routers.notification.middlewares=notification-strip"
@@ -488,7 +496,7 @@ services:
       - "traefik.docker.network=fnbsense"
       - "traefik.http.services.finance.loadbalancer.server.port=8080"
       # Domain STAF saja. Laci kasir bukan urusan orang yang memesan kopi.
-      - "traefik.http.routers.finance.rule=Host(`${DOMAIN_STAFF}`) && PathPrefix(`/finance`)"
+      - "traefik.http.routers.finance.rule=(Host(`${DOMAIN_STAFF}`) || Host(`${DOMAIN_OWNER}`)) && PathPrefix(`/finance`)"
       - "traefik.http.routers.finance.entrypoints=websecure"
       - "traefik.http.routers.finance.tls.certresolver=le"
       - "traefik.http.routers.finance.middlewares=finance-strip"
@@ -625,4 +633,35 @@ services:
       - "traefik.http.routers.app-staff.rule=Host(`${DOMAIN_STAFF}`)"
       - "traefik.http.routers.app-staff.entrypoints=websecure"
       - "traefik.http.routers.app-staff.tls.certresolver=le"
+    networks: [fnbsense]
+
+  # App OWNER — dashboard & pengaturan, terpisah dari app kasir (2026-08-16).
+  # Domainnya sendiri (DOMAIN_OWNER) supaya owner login di alamat berbeda dari
+  # kasir. Backend-nya SAMA dengan kasir (rute /iam /ordering /catalog
+  # /inventory /finance /notification dibuka juga untuk domain owner lewat
+  # aturan Host(...) di atas); yang beda cuma layar depannya. Batas role
+  # (owner/manager) ditegakkan di server, bukan di Traefik.
+  app-owner:
+    build:
+      context: ./apps/owner
+      dockerfile: ../../infra/web/Dockerfile
+      args:
+        VITE_IAM_URL: /iam
+        VITE_ORDERING_URL: /ordering
+        VITE_NOTIFICATION_URL: /notification
+        VITE_INVENTORY_URL: /inventory
+        VITE_FINANCE_URL: /finance
+        VITE_CATALOG_URL: /catalog
+        # Layar pengaturan (QRIS/QR meja) tetap butuh alamat pelanggan.
+        VITE_CUSTOMER_URL: https://${DOMAIN_CUSTOMER}
+        VITE_NAMA_KAFE: ${NAMA_KAFE:-Kafe}
+    container_name: fnbsense-app-owner
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=fnbsense"
+      - "traefik.http.services.app-owner.loadbalancer.server.port=80"
+      - "traefik.http.routers.app-owner.rule=Host(`${DOMAIN_OWNER}`)"
+      - "traefik.http.routers.app-owner.entrypoints=websecure"
+      - "traefik.http.routers.app-owner.tls.certresolver=le"
     networks: [fnbsense]

@@ -23,6 +23,8 @@ class StoreIngredientRequest extends FormRequest
                 Rule::unique('ingredients', 'name')->where('tenant_id', $this->attributes->get('tenant_id')),
             ],
             'unit' => ['required', Rule::in(['g', 'ml', 'pcs'])],
+            // Harga beli per satuan dasar (Rp per g/ml/pcs). Opsional -> default 0.
+            'cost_per_unit' => ['nullable', 'integer', 'min:0', 'max:100000000'],
         ];
     }
 }

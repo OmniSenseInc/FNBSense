@@ -4,10 +4,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { ambilShiftBerjalan, bukaShift, tutupShift } from './api'
+import { ambilRiwayatShift, ambilShiftBerjalan, bukaShift, tutupShift } from './api'
 import LayarShift from './LayarShift'
 
 vi.mock('./api', () => ({
+  ambilRiwayatShift: vi.fn(),
   ambilShiftBerjalan: vi.fn(),
   bukaShift: vi.fn(),
   tutupShift: vi.fn(),
@@ -50,6 +51,9 @@ function tampilkan(onKeluar: () => void = () => {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Riwayat kosong jadi bawaan: kebanyakan tes tak peduli riwayat, dan tanpa
+  // ini pemanggilan ambilRiwayatShift tak beresolusi.
+  ;(ambilRiwayatShift as Mock).mockResolvedValue([])
 })
 
 afterEach(cleanup)
@@ -166,6 +170,26 @@ describe('shift berjalan', () => {
     await screen.findByText('Shift ditutup')
     expect(screen.queryByRole('button', { name: 'Tutup shift' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Buka shift' })).toBeTruthy()
+  })
+})
+
+describe('riwayat shift', () => {
+  it('menampilkan shift yang sudah ditutup, bukan layar kosong', async () => {
+    // Inilah yang dulu "hilang": shift tertutup tak punya pintu baca, jadi
+    // begitu layar di-refresh ia lenyap. Sekarang ia muncul di riwayat.
+    ;(ambilShiftBerjalan as Mock).mockResolvedValue(null)
+    ;(ambilRiwayatShift as Mock).mockResolvedValue([
+      shift({
+        status: 'closed',
+        ditutupPada: new Date(Date.now() - 1_800_000).toISOString(),
+        laporan: laporan({ kasDihitung: 175000, selisih: -5000 }),
+      }),
+    ])
+
+    tampilkan()
+
+    expect(await screen.findByText('Riwayat shift')).toBeTruthy()
+    expect(screen.getByText('Rp -5.000')).toBeTruthy()
   })
 })
 

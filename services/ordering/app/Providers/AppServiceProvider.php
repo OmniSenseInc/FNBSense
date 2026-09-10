@@ -22,14 +22,23 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // POST /api/orders publik: batasi per IP DAN per qr_token (skrutini #4).
-        // Dua limit sekaligus -> satu orang tak bisa membanjiri antrean kasir,
-        // baik dari satu IP maupun menembak satu meja berulang. Melewati salah
-        // satu ambang sudah cukup untuk 429.
+        // POST /api/orders publik. Cukup pagar per IP — satu ember per alamat.
+        //
+        // Dulu ada lapis kedua `per qr_token (10/menit)`. Itu ternyata SALAH
+        // desain: mengunci per MEJA berarti satu meja rame (beberapa orang pesan
+        // bareng) jebol ambang dan ditolak, padahal mereka tak bersalah. Lebih
+        // parah, pesanan yang DIBATALKAN kasir tetap terhitung — jadi customer
+        // yang salah-pesan lalu dibatalkan, terus mau pesan ulang, makin dekat ke
+        // 429 tanpa salah apa pun. Meja bukan identitas "pelaku", jadi bukan
+        // tempat yang benar untuk menahan spam.
+        //
+        // yang memagari satu pelaku (orang / skrip yang membanjiri) cukup `per IP`.
+        // Ambang 30/menit: satu HP normal tak akan menyentuhnya (batal + pesan
+        // ulang belasan kali pun masih aman), sementara satu alamat yang
+        // menembaki 30 pesanan/menit jelas spam.
         RateLimiter::for('orders', function (Request $request) {
             return [
-                Limit::perMinute(20)->by('ip:'.$request->ip()),
-                Limit::perMinute(10)->by('token:'.(string) $request->input('qr_token')),
+                Limit::perMinute(30)->by('ip:'.$request->ip()),
             ];
         });
 

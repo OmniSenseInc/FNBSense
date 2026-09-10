@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -55,6 +56,10 @@ class StaffController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', Password::defaults()],
+            // Owner memilih role staff (boleh kosong = default kasir). 'owner'
+            // sengaja DILARANG: owner cuma satu per tenant (pemegang akun), tak
+            // bisa dilahirkan lewat jalur staff.
+            'role' => ['sometimes', Rule::in([UserRole::Manager->value, UserRole::Cashier->value])],
         ]);
 
         $staff = User::create([
@@ -63,7 +68,7 @@ class StaffController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => $validated['password'],
-            'role' => UserRole::Cashier,
+            'role' => UserRole::from($validated['role'] ?? UserRole::Cashier->value),
             'is_active' => true,
         ]);
 
@@ -89,6 +94,9 @@ class StaffController extends Controller
             // `password` ke sini membalas 200 tapi tak berbuat apa-apa sama
             // sekali: ia tak lolos validasi, jadi tak pernah sampai ke update().
             'password' => ['sometimes', Password::defaults()],
+            // Promosi/demosi staff. 'owner' tak bisa dipilih di sini — owner
+            // satu-satunya adalah pemegang akun, bukan staff yang diatur.
+            'role' => ['sometimes', Rule::in([UserRole::Manager->value, UserRole::Cashier->value])],
         ]);
 
         // Scope tenant dulu, baru cari id: staff tenant lain tak terbedakan
@@ -119,9 +127,46 @@ class StaffController extends Controller
             ]);
         }
 
+        // Owner tak boleh mengubah role-nya sendiri lewat jalur staff: itu jalan
+        // menuju tenant tanpa owner (demosi diri ke manager/cashier) yang tak
+        // bisa dikembalikan tanpa akses langsung ke basis data.
+        if (array_key_exists('role', $validated) && $staff->is($owner)) {
+            throw ValidationException::withMessages([
+                'role' => 'Role pemilik akun tidak bisa diubah lewat sini.',
+            ]);
+        }
+
         $staff->update($validated);
 
         return response()->json($this->present($staff));
+    }
+
+    /**
+     * Hapus staff (SOFT delete). Alasan soft, bukan hard: `confirmed_by` &
+     * `cancelled_by` di Ordering menunjuk id user ini — menghapus barisnya
+     * memutus jejak siapa yang mengonfirmasi/membatalkan order. Soft delete
+     * menyembunyikannya dari daftar tanpa merusak audit.
+     */
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $owner = $this->owner();
+
+        $staff = User::where('tenant_id', $owner->tenant_id)->whereKey($id)->first();
+
+        if (! $staff instanceof User) {
+            return response()->json(['message' => 'Staff tidak ditemukan.'], 404);
+        }
+
+        // Owner tak boleh menghapus dirinya sendiri — tenant mati permanen.
+        if ($staff->is($owner)) {
+            throw ValidationException::withMessages([
+                'staff' => 'Kamu tidak bisa menghapus akunmu sendiri.',
+            ]);
+        }
+
+        $staff->delete();
+
+        return response()->json(['message' => 'Karyawan dihapus.']);
     }
 
     /** User pemilik token — sudah dijamin owner oleh middleware `role:owner`. */

@@ -19,7 +19,7 @@ Route::post('availability', AvailabilityController::class)->middleware(['service
 // memanggil balik Catalog untuk resepnya — lingkaran tiap pemindaian QR.
 Route::get('balance', BalanceController::class)->middleware(['service', 'throttle:120,1']);
 
-Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
+Route::middleware(['jwt', 'role:cashier,owner,manager'])->group(function () {
     Route::get('stock', [StockController::class, 'index']);
 });
 

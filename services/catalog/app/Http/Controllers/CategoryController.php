@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreCategoryRequest;
 use App\Http\Requests\UpdateCategoryRequest;
 use App\Models\Category;
+use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -47,6 +48,13 @@ class CategoryController extends Controller
         $category = Category::query()
             ->where('tenant_id', $this->tenantId($request))
             ->findOrFail($id);
+
+        // Tolak kalau masih ada produk di dalamnya: menu menelusuri produk lewat
+        // kategori, jadi menghapus kategori berisi produk = produk-produk itu
+        // lenyap dari menu tanpa satu pun pesan. Owner pindah/hapus produk dulu.
+        if (Product::where('category_id', $category->id)->exists()) {
+            return response()->json(['message' => 'Kategori masih berisi produk. Pindahkan atau hapus produknya dulu.'], 422);
+        }
 
         $category->delete();
 

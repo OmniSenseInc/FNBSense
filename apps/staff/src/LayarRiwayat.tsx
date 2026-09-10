@@ -54,14 +54,14 @@ export default function LayarRiwayat({ onKeluar }: { onKeluar: () => void }) {
   }, [])
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-        <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
+        <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
           ← Antrean
         </Link>
         <div className="text-right">
           <h1 className="text-base font-semibold">Dibayar hari ini</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-stone-600">
             {daftar === null ? 'Memuat…' : `${daftar.length} pesanan`}
           </p>
         </div>
@@ -75,7 +75,7 @@ export default function LayarRiwayat({ onKeluar }: { onKeluar: () => void }) {
         )}
 
         {daftar !== null && daftar.length === 0 && (
-          <p className="py-16 text-center text-sm text-slate-600">
+          <p className="py-16 text-center text-sm text-stone-600">
             Belum ada pesanan yang dibayar hari ini.
           </p>
         )}
@@ -92,18 +92,18 @@ export default function LayarRiwayat({ onKeluar }: { onKeluar: () => void }) {
                     di jam sibuk. */}
                 <Link
                   to={`/nota/${pesanan.id}`}
-                  className="block rounded-md border border-slate-200 bg-white p-4"
+                  className="block rounded-md border border-stone-200 bg-white p-4"
                 >
                   <div className="flex items-baseline justify-between gap-3">
                     <p className="text-base font-semibold">
                       <span className="tabular-nums">{pesanan.order_number}</span>
-                      {meja && <span className="ml-2 text-slate-600">· {meja}</span>}
+                      {meja && <span className="ml-2 text-stone-600">· {meja}</span>}
                     </p>
                     <p className="text-base font-semibold tabular-nums">
                       {rupiah(pesanan.grand_total)}
                     </p>
                   </div>
-                  <p className="mt-1 text-sm text-slate-600">
+                  <p className="mt-1 text-sm text-stone-600">
                     {/* Jam BAYAR, bukan jam pesan: yang dicari kasir adalah
                         orang yang baru saja meninggalkan meja kasir. */}
                     Dibayar {jam(pesanan.waktuBayar)}

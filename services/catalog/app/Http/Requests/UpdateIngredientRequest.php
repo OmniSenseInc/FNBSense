@@ -26,6 +26,7 @@ class UpdateIngredientRequest extends FormRequest
                     ->ignore($this->route('id')),
             ],
             'unit' => ['sometimes', 'required', Rule::in(['g', 'ml', 'pcs'])],
+            'cost_per_unit' => ['sometimes', 'integer', 'min:0', 'max:100000000'],
         ];
     }
 }

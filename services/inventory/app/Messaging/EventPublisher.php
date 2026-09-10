@@ -71,6 +71,18 @@ class EventPublisher
             // dipasang di channel() — tanpa itu php-amqplib membuang pesan ter-nack
             // diam-diam dan method ini balik seolah sukses.
             $channel->wait_for_pending_acks(self::CONFIRM_TIMEOUT);
+
+            // Tutup SEKARANG, bukan "simpan untuk dipakai ulang". Event saga itu
+            // JARANG — bisa berjeda berjam-jam atau berhari-hari — dan koneksi yang
+            // dipegang sambil nganggur itu racun: php-amqplib cuma memproses
+            // heartbeat saat ada pembacaan (wait), dan publisher malas ini tak
+            // pernah membaca di sela event. Setelah nganggur lebih dari 2×heartbeat
+            // (120 detik), broker menganggap koneksinya mati, dan publish berikutnya
+            // ke koneksi basi itu lempar "Missed server heartbeat" — event saga
+            // HILANG (tercatat di log produksi sebagai error). Menutup di sini
+            // membuat event berikutnya selalu membuka koneksi segar; biaya
+            // menyambung ulang untuk event yang jarang itu nol dari sisi praktis.
+            $this->discard();
         } catch (Throwable $e) {
             // Channel/koneksi kemungkinan sudah rusak (broker restart, blip jaringan,
             // protocol error). Buang supaya publish BERIKUTNYA menyambung ulang.

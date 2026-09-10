@@ -122,6 +122,31 @@ class OrderCalculatorTest extends TestCase
         );
     }
 
+    /** HPP dari Catalog ikut tersimpan per item — dasar laporan laba-rugi. */
+    public function test_unit_cost_ikut_tersimpan_dari_peta_harga_pokok(): void
+    {
+        $result = (new OrderCalculator)->calculate(
+            [['product_id' => 'p1', 'qty' => 2]],
+            $this->catalog(),
+            $this->setting(tax: 0, serviceCharge: 0),
+            ['p1' => 2700],
+        );
+
+        $this->assertSame(2700, $result['items'][0]['unit_cost']);
+    }
+
+    /** Tanpa peta harga pokok (Catalog tak dijangkau) unit_cost nol, bukan crash. */
+    public function test_tanpa_peta_harga_pokok_unit_cost_nol(): void
+    {
+        $result = (new OrderCalculator)->calculate(
+            [['product_id' => 'p1', 'qty' => 1]],
+            $this->catalog(),
+            $this->setting(tax: 0, serviceCharge: 0),
+        );
+
+        $this->assertSame(0, $result['items'][0]['unit_cost']);
+    }
+
     public function test_promo_menghitung_ulang_service_charge_dan_pajak_dari_subtotal_net(): void
     {
         $calculator = new OrderCalculator;

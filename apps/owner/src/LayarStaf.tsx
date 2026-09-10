@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ambilStaf, buatKasir, resetSandiStaf, SESI_HABIS, type Staf, ubahAktifStaf } from './api'
+import { ambilStaf, buatKasir, hapusStaf, resetSandiStaf, SESI_HABIS, type Staf, ubahAktifStaf } from './api'
 
 /**
  * Karyawan: siapa yang boleh masuk, dan siapa yang sudah tidak.
@@ -94,11 +94,11 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
   }
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
         <div>
           <h1 className="text-base font-semibold">Karyawan</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-stone-600">
             {daftar === null ? 'Memuat…' : `${daftar.length} akun`}
           </p>
         </div>
@@ -107,11 +107,11 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
             type="button"
             onClick={() => setVersi((v) => v + 1)}
             disabled={sibuk}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
+            className="rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50"
           >
             {sibuk ? 'Memuat…' : 'Muat ulang'}
           </button>
-          <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
             ← Antrean
           </Link>
         </div>
@@ -124,7 +124,7 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
           </p>
         )}
 
-        <section className="rounded-md border border-slate-200 bg-white p-4">
+        <section className="rounded-md border border-stone-200 bg-white p-4">
           <h2 className="text-sm font-semibold">Kasir baru</h2>
           <form onSubmit={submit} className="mt-3 space-y-2">
             <label htmlFor="nama-staf" className="block text-sm">
@@ -136,7 +136,7 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
               value={nama}
               onChange={(e) => setNama(e.target.value)}
               placeholder="Rina"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"
             />
 
             <label htmlFor="email-staf" className="block text-sm">
@@ -149,7 +149,7 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="rina@kafe.test"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"
             />
 
             <label htmlFor="sandi-staf" className="block text-sm">
@@ -161,19 +161,19 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
               autoComplete="new-password"
               value={sandi}
               onChange={(e) => setSandi(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm"
             />
             {/* Aturannya disebut SEBELUM tombol ditekan, bukan dibiarkan muncul
                 sebagai 422 dari server: owner yang tak tahu syaratnya akan
                 mencoba berulang kali dengan sandi yang sama-sama ditolak. */}
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-stone-600">
               Minimal 8 karakter, mengandung huruf besar, huruf kecil, dan angka. Kasir memakainya
               untuk masuk pertama kali — beri tahu langsung ke orangnya.
             </p>
             <button
               type="submit"
               disabled={sibuk}
-              className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="w-full rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               Tambah kasir
             </button>
@@ -184,14 +184,14 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
           <h2 className="text-sm font-semibold">Daftar karyawan</h2>
           <ul className="mt-2 space-y-2">
             {daftar?.map((s) => (
-              <li key={s.id} className="rounded-md border border-slate-200 bg-white p-3">
+              <li key={s.id} className="rounded-md border border-stone-200 bg-white p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">
                       {s.nama}
-                      {!s.aktif && <span className="ml-2 text-xs text-slate-500">· Nonaktif</span>}
+                      {!s.aktif && <span className="ml-2 text-xs text-stone-500">· Nonaktif</span>}
                     </p>
-                    <p className="truncate text-xs text-slate-500">
+                    <p className="truncate text-xs text-stone-500">
                       {s.email} · {s.peran === 'owner' ? 'Pemilik' : 'Kasir'}
                     </p>
                   </div>
@@ -215,7 +215,7 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
                         }}
                         disabled={sibuk}
                         aria-label={`Reset sandi ${s.nama}`}
-                        className="rounded-md border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-50"
+                        className="rounded-md border border-stone-300 px-3 py-1.5 text-xs disabled:opacity-50"
                       >
                         Reset sandi
                       </button>
@@ -224,9 +224,20 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
                         onClick={() => jalankan(ubahAktifStaf(s.id, !s.aktif))}
                         disabled={sibuk}
                         aria-label={`${s.aktif ? 'Nonaktifkan' : 'Aktifkan'} ${s.nama}`}
-                        className="rounded-md border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-50"
+                        className="rounded-md border border-stone-300 px-3 py-1.5 text-xs disabled:opacity-50"
                       >
                         {s.aktif ? 'Nonaktifkan' : 'Aktifkan'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Hapus "${s.nama}" dari daftar karyawan?`)) jalankan(hapusStaf(s.id))
+                        }}
+                        disabled={sibuk}
+                        aria-label={`Hapus ${s.nama}`}
+                        className="rounded-md border border-brick px-3 py-1.5 text-xs text-brick disabled:opacity-50"
+                      >
+                        Hapus
                       </button>
                     </div>
                   )}
@@ -234,7 +245,7 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
 
                 {resetUntuk === s.id && (
                   <form
-                    className="mt-3 border-t border-slate-200 pt-3"
+                    className="mt-3 border-t border-stone-200 pt-3"
                     onSubmit={(e) => {
                       e.preventDefault()
                       if (sandiBaru === '') {
@@ -259,12 +270,12 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
                         autoComplete="new-password"
                         value={sandiBaru}
                         onChange={(e) => setSandiBaru(e.target.value)}
-                        className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        className="min-w-0 flex-1 rounded-md border border-stone-300 px-3 py-2 text-sm"
                       />
                       <button
                         type="submit"
                         disabled={sibuk}
-                        className="shrink-0 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                        className="shrink-0 rounded-md bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                       >
                         Simpan
                       </button>
@@ -272,7 +283,7 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
                     {/* Owner akan melihat sandi ini; tak ada cara lain — dialah
                         yang mengetiknya. Yang bisa dilakukan layar cuma
                         mengingatkan bahwa pemakainya berhak menggantinya. */}
-                    <p className="mt-1.5 text-xs text-slate-600">
+                    <p className="mt-1.5 text-xs text-stone-600">
                       Minimal 8 karakter dengan huruf besar, kecil, dan angka. Beri tahu langsung ke
                       orangnya — dia bisa menggantinya sendiri lewat Ganti sandi.
                     </p>
@@ -282,12 +293,11 @@ export default function LayarStaf({ onKeluar }: { onKeluar: () => void }) {
             ))}
           </ul>
 
-          {/* Disebut apa adanya, bukan disembunyikan: owner yang mengira
-              "Nonaktifkan" langsung memutus sesi akan heran melihat kasir masih
-              bisa menutup shift beberapa menit kemudian. */}
-          <p className="mt-3 text-xs text-slate-600">
-            Menonaktifkan menutup login berikutnya. Kasir yang sedang membuka aplikasi masih bisa
-            bekerja sampai sesinya kedaluwarsa sendiri (paling lama 15 menit).
+          {/* Disebut apa adanya: sejak polling cekAkunAktif, akun nonaktif/dihapus
+              dikeluarkan otomatis oleh aplikasi kasir dalam hitungan detik. */}
+          <p className="mt-3 text-xs text-stone-600">
+            Menonaktifkan atau menghapus akun menutup login berikutnya dan langsung
+            mengeluarkan kasir yang sedang membuka aplikasi — paling lama 30 detik.
           </p>
         </section>
       </main>

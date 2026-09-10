@@ -27,19 +27,32 @@ Route::post('orders/{id}/claim-paid', [OrderController::class, 'claimPaid'])
 
 // Endpoint kasir — antrean & keputusan uang. role cashier ATAU owner (owner
 // boleh melakukan semua yang kasir bisa). Outlet diambil dari klaim token.
-Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
+//
+// Manager (read-only) boleh MELIHAT antrean & setelan — data yang sama yang
+// ditampilkan di dashboard owner — tapi TIDAK boleh menyentuh keputusan uang
+// (konfirmasi/batal/siap); itu tetap milik kasir & owner.
+Route::middleware(['jwt', 'role:cashier,owner,manager'])->group(function () {
     Route::get('cashier/orders', [CashierOrderController::class, 'index']);
     Route::get('cashier/orders/{id}', [CashierOrderController::class, 'show']);
-    Route::post('cashier/orders/{id}/confirm-payment', [CashierOrderController::class, 'confirmPayment']);
-    Route::post('cashier/orders/{id}/cancel', [CashierOrderController::class, 'cancel']);
-    // Dipakai kasir sekarang, layar dapur (KDS) nanti — satu pintu, bukan dua
-    // jalur yang harus sama-sama benar.
-    Route::post('cashier/orders/{id}/ready', [CashierOrderController::class, 'markReady']);
+    // POS kasir: baca menu + daftar meja aktif (read-only, manager ikut lihat).
+    Route::get('cashier/menu', [CashierOrderController::class, 'menu']);
+    Route::get('cashier/tables', [CashierOrderController::class, 'tables']);
 
     // Dibaca kasir, bukan cuma owner: identitas outlet di sini tercetak di
     // kepala struk, dan yang mencetak struk adalah kasir. Yang MENGUBAH tetap
     // owner saja (PUT & unggah QRIS di grup bawah).
     Route::get('settings', [SettingController::class, 'show']);
+});
+
+// Keputusan uang — kasir & owner saja. Manager tak boleh menyentuh ini.
+Route::middleware(['jwt', 'role:cashier,owner'])->group(function () {
+    // Buat order POS (walk-in / telepon / meja). Manager read-only tak boleh.
+    Route::post('cashier/orders', [CashierOrderController::class, 'store']);
+    Route::post('cashier/orders/{id}/confirm-payment', [CashierOrderController::class, 'confirmPayment']);
+    Route::post('cashier/orders/{id}/cancel', [CashierOrderController::class, 'cancel']);
+    // Dipakai kasir sekarang, layar dapur (KDS) nanti — satu pintu, bukan dua
+    // jalur yang harus sama-sama benar.
+    Route::post('cashier/orders/{id}/ready', [CashierOrderController::class, 'markReady']);
 });
 
 // Manajemen meja & tarif — owner saja (JWT terverifikasi + role:owner).

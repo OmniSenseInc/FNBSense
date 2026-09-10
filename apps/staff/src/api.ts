@@ -29,6 +29,8 @@ const CATALOG = import.meta.env.VITE_CATALOG_URL
  * embed/iklan/rich text, pindahkan ke cookie httpOnly + endpoint sesi.
  */
 const KUNCI_TOKEN = 'fnb.staff.token'
+/** Nama kasir (dari respons login) — dipakai header supaya kasir tahu ia login di akun siapa. */
+const KUNCI_NAMA = 'fnb.staff.nama'
 
 /**
  * Penanda "token sudah tak bisa diselamatkan" — App menangkapnya dan kembali
@@ -49,7 +51,12 @@ export type CaraBayar = 'qris_static' | 'cash'
 
 export const bacaToken = (): string | null => localStorage.getItem(KUNCI_TOKEN)
 const simpanToken = (token: string) => localStorage.setItem(KUNCI_TOKEN, token)
-export const hapusToken = () => localStorage.removeItem(KUNCI_TOKEN)
+const simpanNama = (nama: string) => localStorage.setItem(KUNCI_NAMA, nama)
+export const bacaNama = (): string | null => localStorage.getItem(KUNCI_NAMA)
+export const hapusToken = () => {
+  localStorage.removeItem(KUNCI_TOKEN)
+  localStorage.removeItem(KUNCI_NAMA)
+}
 
 async function jsonDari(res: Response): Promise<Record<string, unknown>> {
   try {
@@ -80,7 +87,9 @@ export async function login(email: string, password: string): Promise<void> {
 
   const json = await jsonDari(res)
   const token = json.access_token
-  const peran = (json.user as Record<string, unknown> | undefined)?.role
+  const user = json.user as Record<string, unknown> | undefined
+  const peran = user?.role
+  const nama = user?.name
 
   if (typeof token !== 'string' || token === '') {
     throw new Error('Login gagal. Coba lagi sebentar.')
@@ -90,6 +99,10 @@ export async function login(email: string, password: string): Promise<void> {
   }
 
   simpanToken(token)
+  // Nama dipakai header supaya kasir tahu ia login di akun siapa. Kosong bila
+  // respons tak menyertakannya (defensif) — header cukup menampilkan FNBSense.
+  if (typeof nama === 'string' && nama.trim() !== '') simpanNama(nama.trim())
+  else localStorage.removeItem(KUNCI_NAMA)
 }
 
 export async function logout(): Promise<void> {
@@ -107,6 +120,36 @@ export async function logout(): Promise<void> {
     // Server tak bisa dihubungi -> token tetap sah sampai kedaluwarsa sendiri.
     // Ini konsekuensi yang sudah diketahui (lihat SECURITY_TODO revocation),
     // bukan sesuatu yang bisa diperbaiki dari sisi layar.
+  }
+}
+
+/**
+ * Akun pemilik token masih hidup? — pertanyaan yang cuma bisa dijawab IAM.
+ *
+ * Token JWT itu "stateless": service lain (ordering, inventory, dst) cuma
+ * memverifikasi klaim di dalamnya, tak pernah mengecek akun ke database. Kasir
+ * yang akunnya dihapus owner karena itu tetap "dianggap hidup" sampai tokennya
+ * kedaluwarsa (15 menit) — layarnya terus jalan tanpa tahu apa-apa.
+ *
+ * `/api/auth/me` di IAM memuat akun DARI DATABASE (SoftDeletes: akun yang
+ * dihapus tak terlihat) → kalau mati balas 403. Layout memanggil ini berkala:
+ * 403 = akun sudah dihapus/dinonaktifkan → keluar SEKARANG, bukan menunggu
+ * kedaluwarsa. 401 = token kedaluwarsa (urusannya refresh, bukan keluar), dan
+ * jaringan gagal bukan salah akun.
+ */
+export async function cekAkunAktif(): Promise<boolean> {
+  const token = bacaToken()
+  if (!token) return false
+
+  try {
+    const res = await fetch(`${IAM}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+
+    return res.status !== 403
+  } catch {
+    // IAM tak terjangkau — jangan salahkan akunnya.
+    return true
   }
 }
 
@@ -270,6 +313,19 @@ export type Pesanan = {
   grand_total: number
   /** Rincian untuk nota. Semua angka datang jadi dari server — layar tak menghitung. */
   subtotal: number
+  /**
+   * Subtotal KOTOR: jumlah semua item, sebelum potongan promo.
+   *
+   * Disimpan server terpisah dari `subtotal` (yang sudah bersih setelah
+   * potongan). Tanpa kolom ini nota tak bisa menunjukkan "berapa sebelum
+   * diskon" — dan kasir yang menjumlahkan item di kepalanya akan melihat
+   * angkanya tak cocok dengan subtotal yang tertera.
+   */
+  grossSubtotal: number
+  /** Potongan promo yang sudah diterapkan server. 0 = tak ada promo. */
+  diskon: number
+  /** Nama promo yang terpasang (mis. "Diskon 10%"), atau null kalau tak ada. */
+  promo: string | null
   layanan: number
   pajak: number
   /** Terisi setelah kasir mengonfirmasi; inilah yang masuk laporan. */
@@ -309,6 +365,15 @@ export type Pesanan = {
   items: ItemPesanan[]
 }
 
+/** Nama promo dari snapshot server, atau null kalau tak ada/bukan objek. */
+function namaPromo(p: unknown): string | null {
+  if (p !== null && typeof p === 'object') {
+    const nama = (p as Record<string, unknown>).name
+    if (typeof nama === 'string' && nama !== '') return nama
+  }
+  return null
+}
+
 /**
  * Bentuk mentah Ordering -> bentuk kita. Diekspor untuk diuji langsung: sama
  * seperti di app pelanggan, inilah bagian yang bisa salah tanpa bersuara.
@@ -329,6 +394,9 @@ export function petakanPesanan(m: Record<string, unknown>): Pesanan {
     // menerima pembayaran nol rupiah tanpa curiga apa pun.
     grand_total: total,
     subtotal: keAngka(m.subtotal),
+    grossSubtotal: keAngka(m.gross_subtotal),
+    diskon: keAngka(m.discount_total),
+    promo: namaPromo(m.promotion),
     layanan: keAngka(m.service_charge),
     pajak: keAngka(m.tax),
     caraBayar: typeof m.payment_method === 'string' ? m.payment_method : null,
@@ -360,6 +428,80 @@ export async function ambilAntrean(): Promise<Pesanan[]> {
   return Array.isArray(data) ? data.map(petakanPesanan) : []
 }
 
+// ===== POS kasir (buat pesanan walk-in / telepon / meja) =====
+
+/** Satu produk di menu POS. */
+export type ProdukMenu = {
+  id: string
+  nama: string
+  harga: number
+  habis: boolean
+}
+
+/** Satu kategori menu (berisi produk). */
+export type KategoriMenu = {
+  id: string
+  nama: string
+  produk: ProdukMenu[]
+}
+
+function petakanProdukMenu(m: Record<string, unknown>): ProdukMenu {
+  return {
+    id: String(m.id ?? ''),
+    nama: typeof m.name === 'string' ? m.name : '',
+    harga: keAngka(m.price),
+    habis: m.is_out_of_stock === true,
+  }
+}
+
+/** Menu POS kasir (kategori -> produk), scoped outlet + penanda habis. */
+export async function ambilMenuKasir(): Promise<KategoriMenu[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/cashier/menu', undefined, ORDERING)
+  return (Array.isArray(data) ? data : []).map((k) => ({
+    id: String(k.id ?? ''),
+    nama: typeof k.name === 'string' ? k.name : '',
+    produk: Array.isArray(k.products) ? k.products.map(petakanProdukMenu) : [],
+  }))
+}
+
+/** Meja aktif untuk POS dine-in. */
+export type MejaKasir = { id: string; label: string }
+
+export async function ambilMejaKasir(): Promise<MejaKasir[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/cashier/tables', undefined, ORDERING)
+  return (Array.isArray(data) ? data : []).map((m) => ({
+    id: String(m.id ?? ''),
+    label: typeof m.label === 'string' ? m.label : '',
+  }))
+}
+
+/** Input buat pesanan POS. */
+export type InputPesananKasir = {
+  orderType: 'dine_in' | 'takeaway'
+  tableId: string | null
+  customerName: string
+  items: { product_id: string; qty: number }[]
+}
+
+/** Buat order POS. Harga & total DIHITUNG SERVER, tak pernah dari layar. */
+export async function buatPesananKasir(input: InputPesananKasir): Promise<Pesanan> {
+  const data = await panggil<Record<string, unknown>>(
+    '/api/cashier/orders',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_type: input.orderType,
+        table_id: input.tableId,
+        customer_name: input.customerName,
+        items: input.items,
+      }),
+    },
+    ORDERING,
+  )
+  return petakanPesanan(data)
+}
+
 /**
  * Pesanan yang SUDAH dibayar di outlet ini.
  *
@@ -379,6 +521,191 @@ export async function ambilRiwayat(): Promise<Pesanan[]> {
   )
 
   return Array.isArray(data) ? data.map(petakanPesanan) : []
+}
+
+/** Data tren harian untuk dashboard owner. */
+export type TrenHarian = {
+  /** Tanggal WIB "YYYY-MM-DD" — kunci pengelompokan. */
+  tanggal: string
+  /** Label pendek sumbu-x, angka tanggal (mis. "15"). */
+  label: string
+  /** Label panjang untuk tooltip, mis. "Sab, 15 Agu". */
+  labelPanjang: string
+  total: number
+  jumlah: number
+}
+
+/**
+ * Zona waktu dashboard: Asia/Jakarta (WIB). DIPAKSA, bukan jam perangkat,
+ * supaya angka yang sama terlihat dari perangkat mana pun (HP kasir, laptop
+ * owner, atau browser tes di luar negeri). WIB tetap UTC+7 tanpa DST, jadi
+ * selisihnya konstan dan aman dipakai untuk hitung-hitung hari.
+ */
+const ZONA_WIB = 'Asia/Jakarta'
+
+/** "YYYY-MM-DD" dari sebuah instant, dihitung dalam WIB. */
+function tanggalWIB(instant: Date): string {
+  const bagian = new Intl.DateTimeFormat('en-US', {
+    timeZone: ZONA_WIB,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(instant)
+  const ambil = (t: string) => bagian.find(b => b.type === t)?.value ?? ''
+  return `${ambil('year')}-${ambil('month')}-${ambil('day')}`
+}
+
+/** Kunci tanggal WIB dari ISO (server boleh kirim UTC maupun +07:00). null-safe. */
+export function kunciTanggalWIB(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return tanggalWIB(d)
+}
+
+/**
+ * Instant WIB tengah malam, `mundur` hari ke belakang dari hari ini (0 = hari ini).
+ *
+ * `setTime` dipakai (bukan `setDate`) supaya pengurangan 24 jam tidak tergeser
+ * oleh zona perangkat — `setDate` membaca jam LOKAL, yang bisa berbeda-beda.
+ */
+export function awalHariWIB(mundur: number): Date {
+  const tgl = tanggalWIB(new Date())
+  const d = new Date(`${tgl}T00:00:00+07:00`)
+  d.setTime(d.getTime() - mundur * 86_400_000)
+  return d
+}
+
+/** Semua pesanan lunas sejak `sejak` — buat dashboard owner. */
+export async function ambilPesananDari(sejak: Date): Promise<Pesanan[]> {
+  const data = await panggil<Record<string, unknown>[]>(
+    `/api/cashier/orders?status=paid&paid_since=${encodeURIComponent(sejak.toISOString())}`,
+  )
+  return Array.isArray(data) ? data.map(petakanPesanan) : []
+}
+
+/**
+ * Batas tanggal WIB (inklusif, "YYYY-MM-DD") periode saat ini dan sebelumnya.
+ * `mulaiPrev`..`selesaiPrev` = N hari sebelum periode saat ini, buat % naik/turun.
+ */
+export function rentangPeriode(jumlahHari: number): {
+  mulaiCur: string
+  selesaiCur: string
+  mulaiPrev: string
+  selesaiPrev: string
+} {
+  return {
+    mulaiCur: tanggalWIB(awalHariWIB(jumlahHari - 1)),
+    selesaiCur: tanggalWIB(new Date()),
+    mulaiPrev: tanggalWIB(awalHariWIB(2 * jumlahHari - 1)),
+    selesaiPrev: tanggalWIB(awalHariWIB(jumlahHari)),
+  }
+}
+
+/** Jumlahkan omset/transaksi/tunai/qris dalam rentang tanggal WIB [mulai, selesai]. */
+export function ringkasPesanan(
+  pesanan: Pesanan[],
+  mulai: string,
+  selesai: string,
+): { total: number; jumlah: number; tunai: number; qris: number } {
+  let total = 0
+  let jumlah = 0
+  let tunai = 0
+  let qris = 0
+  for (const p of pesanan) {
+    const tgl = kunciTanggalWIB(p.waktuBayar)
+    if (!tgl || tgl < mulai || tgl > selesai) continue
+    total += p.grand_total ?? 0
+    jumlah += 1
+    if (p.caraBayar === 'cash') tunai += p.grand_total ?? 0
+    else if (p.caraBayar === 'qris_static') qris += p.grand_total ?? 0
+  }
+  return { total, jumlah, tunai, qris }
+}
+
+/** Kelompokkan pesanan per hari (WIB) → tren grafik, N hari terakhir. */
+export function trenDariPesanan(pesanan: Pesanan[], jumlahHari: number): TrenHarian[] {
+  const peta: Record<string, { total: number; jml: number }> = {}
+  for (const p of pesanan) {
+    const tgl = kunciTanggalWIB(p.waktuBayar)
+    if (!tgl) continue
+    if (!peta[tgl]) peta[tgl] = { total: 0, jml: 0 }
+    peta[tgl].total += p.grand_total ?? 0
+    peta[tgl].jml += 1
+  }
+
+  const labelPanjang = new Intl.DateTimeFormat('id-ID', {
+    timeZone: ZONA_WIB,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+
+  const hasil: TrenHarian[] = []
+  for (let i = jumlahHari - 1; i >= 0; i--) {
+    const d = awalHariWIB(i)
+    const tgl = tanggalWIB(d)
+    hasil.push({
+      tanggal: tgl,
+      label: String(Number(tgl.slice(8, 10))),
+      labelPanjang: labelPanjang.format(d),
+      total: peta[tgl]?.total ?? 0,
+      jumlah: peta[tgl]?.jml ?? 0,
+    })
+  }
+  return hasil
+}
+
+/** Tanggal lengkap WIB, mis. "Jumat, 15 Agustus 2026". */
+export function tanggalLengkapWIB(instant: Date = new Date()): string {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: ZONA_WIB,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(instant)
+}
+
+/** Sapaan berdasar jam WIB: pagi/siang/sore/malam. */
+export function sapaanWIB(instant: Date = new Date()): string {
+  const jam = Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: ZONA_WIB, hour: 'numeric', hour12: false }).format(instant),
+  )
+  if (jam < 11) return 'Selamat pagi'
+  if (jam < 15) return 'Selamat siang'
+  if (jam < 19) return 'Selamat sore'
+  return 'Selamat malam'
+}
+
+/** Tanggal + jam WIB ringkas, mis. "15 Agu 14.05". */
+export function tanggalJamWIB(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: ZONA_WIB,
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d)
+}
+
+/** Produk & total dari kumpulan pesanan. */
+export function topDariPesanan(pesanan: Pesanan[]): { produk: string; jumlah: number; total: number }[] {
+  const peta: Record<string, { jml: number; tot: number }> = {}
+  for (const p of pesanan) {
+    for (const item of p.items ?? []) {
+      const nama = item.nama ?? 'Produk'
+      if (!peta[nama]) peta[nama] = { jml: 0, tot: 0 }
+      peta[nama].jml += item.qty ?? 0
+      peta[nama].tot += (item.qty ?? 0) * (item.hargaSatuan ?? 0)
+    }
+  }
+  return Object.entries(peta)
+    .map(([produk, { jml, tot }]) => ({ produk, jumlah: jml, total: tot }))
+    .sort((a, b) => b.total - a.total)
 }
 
 /**
@@ -649,6 +976,18 @@ export function petakanSetelan(m: Record<string, unknown>): Setelan {
  */
 export function urlQris(jalur: string): string {
   return /^https?:\/\//.test(jalur) ? jalur : `${ORDERING}${jalur}`
+}
+
+/**
+ * Alamat foto produk yang bisa dipasang di <img>.
+ *
+ * `image_url` relatif terhadap CATALOG, bukan terhadap app ini — sepola
+ * urlQris() di atas. URL absolut (kolom yang sama boleh memuatnya) dibiarkan
+ * utuh.
+ */
+export function urlGambar(jalur: string | null): string | null {
+  if (jalur === null) return null
+  return /^https?:\/\//.test(jalur) ? jalur : `${CATALOG}${jalur}`
 }
 
 export async function ambilSetelan(): Promise<Setelan> {
@@ -966,6 +1305,107 @@ export async function tutupShift(id: string, kasDihitung: number): Promise<Shift
   return petakanShift(data)
 }
 
+/**
+ * Riwayat shift yang sudah DITUTUP outlet ini, terbaru di atas (maks. 20).
+ *
+ * Inilah yang membuat shift tertutup tetap terlihat setelah layar di-refresh —
+ * sebelumnya hanya ada `current` (shift berjalan) dan tak ada pintu baca untuk
+ * shift yang sudah lewat, sehingga begitu ditutup ia "hilang" dari layar.
+ */
+export async function ambilRiwayatShift(): Promise<Shift[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/shifts', undefined, FINANCE)
+  return Array.isArray(data) ? data.map(petakanShift) : []
+}
+
+/**
+ * Laporan laba-rugi lintas-hari (Finance, owner saja). Omzet − harga pokok
+ * (HPP) = laba kotor; laba kotor − pengeluaran = laba bersih.
+ */
+export type Laporan = {
+  period: { from: string; to: string }
+  sales: { total: number; cash: number; qris: number; transactions: number }
+  cogs: number
+  gross_profit: number
+  margin_percent: number
+  expenses: { total: number; count: number; by_category: Record<string, number> }
+  net: number
+}
+
+export type Pengeluaran = {
+  id: string
+  category: string
+  amount: number
+  note: string | null
+  spent_at: string | null
+}
+
+function petakanPengeluaran(m: Record<string, unknown>): Pengeluaran {
+  return {
+    id: String(m.id ?? ''),
+    category: typeof m.category === 'string' ? m.category : '',
+    amount: keAngka(m.amount),
+    note: typeof m.note === 'string' && m.note !== '' ? m.note : null,
+    spent_at: typeof m.spent_at === 'string' ? m.spent_at : null,
+  }
+}
+
+/** Laporan laba-rugi rentang tanggal WIB. from/to = "YYYY-MM-DD". */
+export async function ambilLaporan(from: string, to: string): Promise<Laporan> {
+  const data = await panggil<Record<string, unknown>>(
+    `/api/reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    undefined,
+    FINANCE,
+  )
+
+  const period = (data.period ?? {}) as Record<string, unknown>
+  const sales = (data.sales ?? {}) as Record<string, unknown>
+  const expenses = (data.expenses ?? {}) as Record<string, unknown>
+  const byCategory = (expenses.by_category ?? {}) as Record<string, unknown>
+
+  return {
+    period: {
+      from: typeof period.from === 'string' ? period.from : from,
+      to: typeof period.to === 'string' ? period.to : to,
+    },
+    sales: {
+      total: keAngka(sales.total),
+      cash: keAngka(sales.cash),
+      qris: keAngka(sales.qris),
+      transactions: keAngka(sales.transactions),
+    },
+    cogs: keAngka(data.cogs),
+    gross_profit: keAngka(data.gross_profit),
+    margin_percent: keAngka(data.margin_percent),
+    expenses: {
+      total: keAngka(expenses.total),
+      count: keAngka(expenses.count),
+      by_category: Object.fromEntries(
+        Object.entries(byCategory).map(([k, v]) => [k, keAngka(v)]),
+      ),
+    },
+    net: keAngka(data.net),
+  }
+}
+
+export async function ambilPengeluaran(): Promise<Pengeluaran[]> {
+  const data = await panggil<Record<string, unknown>[]>('/api/expenses', undefined, FINANCE)
+
+  return (Array.isArray(data) ? data : []).map(petakanPengeluaran)
+}
+
+/** Catat pengeluaran. Kategori tertutup: bahan | operasional | gaji | lain. */
+export async function catatPengeluaran(kategori: string, nominal: number, catatan: string | null): Promise<void> {
+  await mintaJson(
+    '/api/expenses',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: kategori, amount: nominal, note: catatan }),
+    },
+    FINANCE,
+  )
+}
+
 export type Kategori = {
   id: string
   nama: string
@@ -978,6 +1418,8 @@ export type Produk = {
   harga: number
   kategoriId: string | null
   tersedia: boolean
+  /** Alamat foto mentah — relatif terhadap CATALOG. Pakai urlGambar() saat render. */
+  gambarUrl: string | null
 }
 
 export function petakanKategori(m: Record<string, unknown>): Kategori {
@@ -1000,6 +1442,7 @@ export function petakanProduk(m: Record<string, unknown>): Produk {
     harga: keAngka(m.price),
     kategoriId: typeof m.category_id === 'string' && m.category_id !== '' ? m.category_id : null,
     tersedia: m.is_available !== false && m.is_available !== 0,
+    gambarUrl: typeof m.image_url === 'string' && m.image_url !== '' ? m.image_url : null,
   }
 }
 
@@ -1070,6 +1513,22 @@ export async function ubahProduk(
 }
 
 /**
+ * Unggah foto produk (multipart). Content-Type SENGAJA tidak diset — batas
+ * multipart dibangkitkan browser berikut nilai acaknya, sepola unggahQris().
+ * Setelah ini produk punya `image_url`, dan layar memuat ulang daftarnya.
+ */
+export async function unggahFotoProduk(id: string, berkas: File): Promise<void> {
+  const form = new FormData()
+  form.append('image', berkas)
+
+  await panggil<Record<string, unknown>>(
+    `/api/products/${encodeURIComponent(id)}/image`,
+    { method: 'POST', body: form },
+    CATALOG,
+  )
+}
+
+/**
  * Satuan dasar bahan — cermin `enum('g','ml','pcs')` di migrasi `ingredients`.
  *
  * ponytail: daftar disalin, bukan diambil dari server, karena Catalog tak punya
@@ -1083,6 +1542,8 @@ export type Bahan = {
   id: string
   nama: string
   satuan: string
+  /** Harga beli per satuan dasar (g/ml/pcs), integer rupiah. 0 = belum diisi. */
+  hargaBeli: number
 }
 
 export type BarisResep = {
@@ -1093,10 +1554,13 @@ export type BarisResep = {
 }
 
 export function petakanBahan(m: Record<string, unknown>): Bahan {
+  const hargaBeli = keAngka(m.cost_per_unit)
   return {
     id: String(m.id ?? ''),
     nama: typeof m.name === 'string' ? m.name : '',
     satuan: typeof m.unit === 'string' ? m.unit : '',
+    // Bahan lama (sebelum ada kolom harga beli) tak punya cost_per_unit -> 0.
+    hargaBeli: Number.isFinite(hargaBeli) ? hargaBeli : 0,
   }
 }
 
@@ -1118,13 +1582,26 @@ export async function ambilBahan(): Promise<Bahan[]> {
   return (Array.isArray(data) ? data : []).map(petakanBahan)
 }
 
-export async function buatBahan(nama: string, satuan: string): Promise<void> {
+export async function buatBahan(nama: string, satuan: string, hargaBeli = 0): Promise<void> {
   await mintaJson(
     '/api/ingredients',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nama, unit: satuan }),
+      body: JSON.stringify({ name: nama, unit: satuan, cost_per_unit: hargaBeli }),
+    },
+    CATALOG,
+  )
+}
+
+/** Ubah harga beli bahan — dasar hitung HPP. Hanya harga beli yang dikirim. */
+export async function ubahHargaBeli(id: string, hargaBeli: number): Promise<void> {
+  await mintaJson(
+    `/api/ingredients/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cost_per_unit: hargaBeli }),
     },
     CATALOG,
   )

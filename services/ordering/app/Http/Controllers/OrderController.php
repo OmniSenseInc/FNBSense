@@ -3,19 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Enums\OrderStatus;
-use App\Enums\OrderType;
 use App\Http\Requests\StoreOrderRequest;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderSetting;
 use App\Models\Table;
-use App\Services\CatalogClient;
-use App\Services\InventoryClient;
-use App\Services\OrderCalculator;
-use App\Services\OrderNumberGenerator;
-use App\Services\PromotionClient;
+use App\Services\OrderPlacement;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -30,9 +24,6 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  */
 class OrderController extends Controller
 {
-    /** Berapa kali transaksi diulang kalau order_number acak kebetulan bentrok. */
-    private const MAX_ORDER_NUMBER_ATTEMPTS = 5;
-
     /**
      * Resolve QR meja -> identitas tenant/outlet/meja untuk frontend.
      *
@@ -59,9 +50,7 @@ class OrderController extends Controller
      */
     public function store(
         StoreOrderRequest $request,
-        CatalogClient $catalog,
-        PromotionClient $promotions,
-        InventoryClient $inventory,
+        OrderPlacement $placement,
     ): JsonResponse {
         $data = $request->validated();
 
@@ -72,55 +61,15 @@ class OrderController extends Controller
             ->where('is_active', true)
             ->firstOrFail();
 
-        // Harga SELALU dari Catalog, tak pernah dari client. Catalog down -> 503.
-        $products = $catalog->productsForTenant($table->tenant_id);
-
-        // Gerbang stok. Sebelum ini stok baru diperiksa saat `order.paid` —
-        // SESUDAH pelanggan membayar — sehingga bahan yang habis berakhir
-        // sebagai saldo negatif, kasir memegang uang, dan barangnya tak ada.
-        // Pembatalan sesudah PAID pun tak tersedia (PAID terminal).
-        //
-        // Ditaruh SEBELUM promo & kalkulator dengan sengaja: menghitung diskon
-        // untuk pesanan yang akan ditolak cuma membakar satu panggilan ke
-        // Catalog dan membuat log promo berisi pesanan yang tak pernah ada.
-        $habis = $inventory->unavailableProducts(
+        $order = $placement->place(
             $table->tenant_id,
             $table->outlet_id,
+            $table->id,
+            $data['order_type'],
+            $data['customer_name'],
             $data['items'],
+            $data['payment_preference'] ?? null,
         );
-
-        if ($habis !== []) {
-            // Namanya disebut, bukan id-nya: yang membaca pesan ini adalah orang
-            // yang sedang duduk di meja, bukan yang membangun sistemnya.
-            $nama = array_map(
-                fn (string $id) => $products[$id]['name'] ?? 'Produk',
-                $habis,
-            );
-
-            throw new HttpException(422, 'Bahan untuk '.implode(', ', $nama).' sedang habis. Silakan pilih menu lain.');
-        }
-
-        // Tarif di-snapshot dari setting outlet; belum diset -> tarif 0 (bukan tebak).
-        $setting = OrderSetting::query()
-            ->where('tenant_id', $table->tenant_id)
-            ->where('outlet_id', $table->outlet_id)
-            ->first()
-            ?? OrderSetting::defaultsFor($table->tenant_id, $table->outlet_id);
-
-        // Produk di luar menu tenant -> ProductNotOrderableException -> 422.
-        $calculator = new OrderCalculator;
-        $calc = $calculator->calculate($data['items'], $products, $setting);
-
-        if ((bool) config('services.catalog.promotions_enabled', true)) {
-            $promotion = $promotions->evaluate(
-                $table->tenant_id,
-                $table->outlet_id,
-                $calc,
-            );
-            $calc = $calculator->applyPromotion($calc, $promotion, $setting);
-        }
-
-        $order = $this->persistOrder($table, $data, $setting, $calc);
 
         return response()->json(['data' => $this->present($order)], 201);
     }
@@ -197,69 +146,6 @@ class OrderController extends Controller
         });
 
         return response()->json(['data' => $this->present($order->load('items'))]);
-    }
-
-    /**
-     * Tulis order PENDING + itemnya dalam SATU transaksi.
-     *
-     * order_number acak bisa (sangat jarang) menabrak unique(outlet_id, order_number).
-     * Tangkap SPESIFIK UniqueConstraintViolationException lalu ulangi transaksi
-     * dengan nomor baru — bukan 500 mentah ke customer. Batas percobaan mencegah
-     * loop tak berujung kalau bentroknya ternyata karena sebab lain.
-     */
-    private function persistOrder(Table $table, array $data, OrderSetting $setting, array $calc): Order
-    {
-        $isTakeaway = $data['order_type'] === OrderType::Takeaway->value;
-        // Takeaway = tanpa meja (skema table_id nullable). Meja yang di-scan cuma
-        // penentu tenant/outlet, tak melekat ke ordernya.
-        $tableId = $isTakeaway ? null : $table->id;
-        $expiresAt = now()->addMinutes((int) $setting->order_expiry_minutes);
-
-        for ($attempt = 1; ; $attempt++) {
-            try {
-                return DB::transaction(function () use ($table, $data, $setting, $calc, $tableId, $expiresAt) {
-                    // Hanya kolom milik-customer yang mass-assignable; sisanya di-set
-                    // eksplisit di bawah — uang/status/identitas tak boleh dari body.
-                    $order = new Order([
-                        'order_type' => $data['order_type'],
-                        'customer_name' => $data['customer_name'],
-                        // Niat bayar pelanggan. Disimpan apa adanya dan tak
-                        // pernah menyentuh payment_method — kasir yang mengisi
-                        // itu, setelah uangnya benar-benar ada.
-                        'payment_preference' => $data['payment_preference'] ?? null,
-                    ]);
-
-                    $order->tenant_id = $table->tenant_id;
-                    $order->outlet_id = $table->outlet_id;
-                    $order->table_id = $tableId;
-                    $order->order_number = (new OrderNumberGenerator)->generate();
-                    $order->gross_subtotal = $calc['gross_subtotal'];
-                    $order->discount_total = $calc['discount_total'];
-                    $order->subtotal = $calc['subtotal'];
-                    $order->service_charge = $calc['service_charge'];
-                    $order->tax = $calc['tax'];
-                    $order->grand_total = $calc['grand_total'];
-                    // Tarif di-snapshot: owner ubah tarif besok != ubah struk ini.
-                    $order->tax_percent = $setting->tax_percent;
-                    $order->service_charge_percent = $setting->service_charge_percent;
-                    $order->promotion_id = $calc['promotion']['id'] ?? null;
-                    $order->promotion_snapshot = $calc['promotion'];
-                    $order->expires_at = $expiresAt;
-                    $order->save();
-
-                    foreach ($calc['items'] as $line) {
-                        $order->items()->create($line);
-                    }
-
-                    return $order->load('items');
-                });
-            } catch (UniqueConstraintViolationException $e) {
-                if ($attempt >= self::MAX_ORDER_NUMBER_ATTEMPTS) {
-                    throw $e;
-                }
-                // order_number bentrok -> ulangi transaksi dengan nomor baru.
-            }
-        }
     }
 
     /**

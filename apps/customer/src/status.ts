@@ -85,6 +85,21 @@ export function jelaskanStatus(
 }
 
 /**
+ * Apakah pesanan ini masih "hidup" untuk ditampilkan di popup "Pesanan saya".
+ *
+ * Yang masih hidup: menunggu bayar (pending) atau sudah bayar tapi belum siap
+ * diantar. Yang sudah siap, dibatalkan, atau kedaluwarsa dianggap SELESAI —
+ * menampilkannya berarti membawa pesanan pelanggan sebelumnya ke pelanggan
+ * berikutnya di meja yang sama. Status tak dikenal dianggap masih hidup
+ * (jangan mengarang kesimpulan buruk dari yang tak kita kenal).
+ */
+export function pesananMasihAktif(status: string, readyAt: string | null): boolean {
+  const s = status.toLowerCase()
+  if (s === 'cancelled' || s === 'canceled' || s === 'expired') return false
+  return readyAt === null
+}
+
+/**
  * Tampilan per rasa.
  *
  * Warna sepenuh kartu, bukan sekadar titik kecil di sudut: perubahan status

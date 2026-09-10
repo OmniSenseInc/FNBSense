@@ -146,9 +146,9 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
   }
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-        <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
+        <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
           ← Antrean
         </Link>
         <h1 className="text-base font-semibold">Setelan outlet</h1>
@@ -170,12 +170,12 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
         )}
 
         {setelan === null ? (
-          <p className="py-16 text-center text-sm text-slate-600">Memuat setelan…</p>
+          <p className="py-16 text-center text-sm text-stone-600">Memuat setelan…</p>
         ) : (
           <div className="flex flex-col gap-4">
-            <section className="rounded-md border border-slate-200 bg-white p-4">
+            <section className="rounded-md border border-stone-200 bg-white p-4">
               <h2 className="text-base font-semibold">Cara bayar QRIS</h2>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-stone-600">
                 Gambar ini yang muncul di HP pelanggan saat menunggu pembayaran.
               </p>
 
@@ -185,10 +185,10 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                 <img
                   src={urlQris(setelan.qrisUrl)}
                   alt="QRIS outlet yang sedang terpasang"
-                  className="mt-3 h-48 w-48 rounded-md border border-slate-200 object-contain"
+                  className="mt-3 h-48 w-48 rounded-md border border-stone-200 object-contain"
                 />
               ) : (
-                <p className="mt-3 rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
+                <p className="mt-3 rounded-md bg-sage-100 px-3 py-2 text-sm text-sage-900">
                   Belum ada QRIS. Pelanggan diminta membayar di kasir.
                 </p>
               )}
@@ -208,15 +208,15 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                 type="button"
                 disabled={sibuk || berkas === null}
                 onClick={unggah}
-                className="mt-3 rounded-md bg-slate-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
+                className="mt-3 rounded-md bg-stone-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
               >
                 {sibuk ? 'Mengunggah…' : 'Ganti QRIS'}
               </button>
             </section>
 
-            <form onSubmit={simpan} className="rounded-md border border-slate-200 bg-white p-4">
+            <form onSubmit={simpan} className="rounded-md border border-stone-200 bg-white p-4">
               <h2 className="text-base font-semibold">Identitas kafe</h2>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-stone-600">
                 Dicetak di kepala struk. Yang dikosongkan tidak ikut tercetak.
               </p>
 
@@ -231,7 +231,7 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                   placeholder="Kopi Senja"
                   value={form.nama}
                   onChange={(e) => setForm({ ...form, nama: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base"
                 />
               </label>
 
@@ -243,7 +243,7 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                   placeholder="Jl. Contoh No. 123"
                   value={form.alamat}
                   onChange={(e) => setForm({ ...form, alamat: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base"
                 />
               </label>
 
@@ -258,11 +258,11 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                   placeholder="0812-3456-7890"
                   value={form.telepon}
                   onChange={(e) => setForm({ ...form, telepon: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base"
                 />
               </label>
 
-              <h2 className="mt-6 border-t border-slate-200 pt-4 text-base font-semibold">
+              <h2 className="mt-6 border-t border-stone-200 pt-4 text-base font-semibold">
                 Tarif &amp; batas waktu
               </h2>
 
@@ -280,7 +280,7 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                   step="0.01"
                   value={form.pajak}
                   onChange={(e) => setForm({ ...form, pajak: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base tabular-nums"
+                  className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base tabular-nums"
                 />
               </label>
 
@@ -294,7 +294,7 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                   step="0.01"
                   value={form.layanan}
                   onChange={(e) => setForm({ ...form, layanan: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base tabular-nums"
+                  className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base tabular-nums"
                 />
               </label>
 
@@ -308,9 +308,9 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
                   step="1"
                   value={form.kedaluwarsa}
                   onChange={(e) => setForm({ ...form, kedaluwarsa: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base tabular-nums"
+                  className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base tabular-nums"
                 />
-                <span className="mt-1 block text-slate-600">
+                <span className="mt-1 block text-stone-600">
                   Setelah lewat, pesanan yang belum dibayar hangus sendiri.
                 </span>
               </label>
@@ -318,7 +318,7 @@ export default function LayarSetelan({ onKeluar }: { onKeluar: () => void }) {
               <button
                 type="submit"
                 disabled={sibuk}
-                className="mt-4 w-full rounded-md bg-slate-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
+                className="mt-4 w-full rounded-md bg-stone-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
               >
                 {sibuk ? 'Menyimpan…' : 'Simpan setelan'}
               </button>

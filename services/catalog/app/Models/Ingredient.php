@@ -14,7 +14,15 @@ class Ingredient extends Model
         'tenant_id',
         'name',
         'unit',
+        'cost_per_unit',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'cost_per_unit' => 'integer',
+        ];
+    }
 
     public function recipes(): HasMany
     {

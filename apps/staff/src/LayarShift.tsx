@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import {
+  ambilRiwayatShift,
   ambilShiftBerjalan,
   bukaShift,
   SESI_HABIS,
@@ -32,6 +33,8 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
   const [galat, setGalat] = useState<string | null>(null)
   const [sibuk, setSibuk] = useState(false)
   const [versi, setVersi] = useState(0)
+  /** Riwayat shift yang sudah ditutup. null = belum dimuat. */
+  const [riwayat, setRiwayat] = useState<Shift[] | null>(null)
 
   const keluarRef = useRef(onKeluar)
   keluarRef.current = onKeluar
@@ -57,6 +60,14 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
       .finally(() => {
         if (!batal) setSibuk(false)
       })
+
+    // Riwayat adalah pelengkap: gagal memuatnya tak boleh menenggelamkan shift
+    // berjalan. Best-effort, diam saat galat.
+    ambilRiwayatShift()
+      .then((d) => {
+        if (!batal) setRiwayat(d)
+      })
+      .catch(() => {})
 
     return () => {
       batal = true
@@ -129,7 +140,8 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
       // Hasil tutup dipindah ke `baruDitutup`, bukan tetap di `shift`: sesudah
       // ini outlet TAK punya shift berjalan lagi, dan membiarkannya di tempat
       // yang sama berarti tombol "Tutup shift" muncul untuk shift yang sudah
-      // tertutup.
+      // tertutup. Shift yang baru ditutup akan ikut muncul di riwayat begitu
+      // layar dimuat ulang.
       setBaruDitutup(await tutupShift(shift.id, jumlah))
       setShift(null)
       setKasDihitung('')
@@ -137,11 +149,11 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
   }
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
         <div>
           <h1 className="text-base font-semibold">Shift</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-stone-600">
             {shift === undefined
               ? 'Memuat…'
               : shift === null
@@ -154,11 +166,11 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
             type="button"
             onClick={() => setVersi((v) => v + 1)}
             disabled={sibuk}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
+            className="rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50"
           >
             {sibuk ? 'Memuat…' : 'Muat ulang'}
           </button>
-          <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
             ← Antrean
           </Link>
         </div>
@@ -172,9 +184,9 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
         )}
 
         {baruDitutup && (
-          <section className="mb-4 rounded-md border border-slate-300 bg-white p-4">
+          <section className="mb-4 rounded-md border border-stone-300 bg-white p-4">
             <h2 className="text-sm font-semibold">Shift ditutup</h2>
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="mt-1 text-xs text-stone-600">
               {tanggalJam(baruDitutup.dibukaPada)} — {tanggalJam(baruDitutup.ditutupPada)}
             </p>
             <Laporan laporan={baruDitutup.laporan} />
@@ -182,7 +194,7 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
         )}
 
         {shift === null && (
-          <form onSubmit={submitBuka} className="rounded-md border border-slate-200 bg-white p-4">
+          <form onSubmit={submitBuka} className="rounded-md border border-stone-200 bg-white p-4">
             <h2 className="text-sm font-semibold">Buka shift</h2>
             <label htmlFor="modal-awal" className="mt-3 block text-sm">
               Modal awal di laci
@@ -196,12 +208,12 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
               value={modalAwal}
               onChange={(e) => setModalAwal(e.target.value)}
               placeholder="200000"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base tabular-nums"
+              className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base tabular-nums"
             />
             <button
               type="submit"
               disabled={sibuk}
-              className="mt-3 w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="mt-3 w-full rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               Buka shift
             </button>
@@ -210,14 +222,14 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
 
         {shift && (
           <>
-            <section className="rounded-md border border-slate-200 bg-white p-4">
+            <section className="rounded-md border border-stone-200 bg-white p-4">
               <h2 className="text-sm font-semibold">Penjualan shift berjalan</h2>
               <Laporan laporan={shift.laporan} />
             </section>
 
             <form
               onSubmit={submitTutup}
-              className="mt-4 rounded-md border border-slate-200 bg-white p-4"
+              className="mt-4 rounded-md border border-stone-200 bg-white p-4"
             >
               <h2 className="text-sm font-semibold">Tutup shift</h2>
               <label htmlFor="kas-dihitung" className="mt-3 block text-sm">
@@ -232,25 +244,63 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
                 value={kasDihitung}
                 onChange={(e) => setKasDihitung(e.target.value)}
                 placeholder="350000"
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base tabular-nums"
+                className="mt-1 w-full rounded-md border border-stone-300 px-3 py-2 text-base tabular-nums"
               />
               {/* Hitung dulu, baru buka amplop: selisih yang ditampilkan sebelum
                   kasir mengetik angkanya sendiri mengundang orang menyalin
                   "kas seharusnya" bulat-bulat, dan selisih yang selalu nol tak
                   pernah menemukan apa pun. */}
-              <p className="mt-2 text-xs text-slate-600">
+              <p className="mt-2 text-xs text-stone-600">
                 Hitung isi laci dulu, jangan menyalin angka di atas. Selisihnya muncul setelah
                 shift ditutup.
               </p>
               <button
                 type="submit"
                 disabled={sibuk}
-                className="mt-3 w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                className="mt-3 w-full rounded-md bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 Tutup shift
               </button>
             </form>
           </>
+        )}
+
+        {/* — Riwayat shift yang sudah lewat — */}
+        {riwayat !== null && riwayat.length > 0 && (
+          <section className="rounded-md border border-stone-200 bg-white p-4">
+            <h2 className="text-sm font-semibold">Riwayat shift</h2>
+            <div className="mt-2 divide-y divide-stone-100">
+              {riwayat.map((s) => (
+                <div key={s.id} className="py-2">
+                  <p className="text-sm text-stone-700 tabular-nums">
+                    {tanggalJam(s.dibukaPada)}
+                    {s.ditutupPada ? ` — ${tanggalJam(s.ditutupPada)}` : ''}
+                  </p>
+                  <p className="mt-0.5 text-xs text-stone-500">
+                    Modal {rupiah(s.modalAwal)}
+                    {s.laporan ? ` · Penjualan ${rupiah(s.laporan.totalPenjualan)}` : ''}
+                    {s.laporan?.selisih != null && (
+                      <>
+                        {' · Selisih '}
+                        <span
+                          className={
+                            s.laporan.selisih === 0
+                              ? ''
+                              : s.laporan.selisih < 0
+                                ? 'font-semibold text-red-600'
+                                : 'font-semibold text-sage-700'
+                          }
+                        >
+                          {s.laporan.selisih > 0 ? '+' : ''}
+                          {rupiah(s.laporan.selisih)}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
       </main>
     </div>
@@ -260,7 +310,7 @@ export default function LayarShift({ onKeluar }: { onKeluar: () => void }) {
 /** Baris-baris laporan X/Z. Dipakai dua kali: shift berjalan dan shift tertutup. */
 function Laporan({ laporan }: { laporan: LaporanShift | null }) {
   if (laporan === null) {
-    return <p className="mt-2 text-sm text-slate-600">Laporan belum tersedia.</p>
+    return <p className="mt-2 text-sm text-stone-600">Laporan belum tersedia.</p>
   }
 
   return (
@@ -283,10 +333,10 @@ function Laporan({ laporan }: { laporan: LaporanShift | null }) {
         <div
           className={`flex justify-between gap-3 rounded-md px-2 py-1 font-semibold ${
             laporan.selisih === 0
-              ? 'bg-slate-100'
+              ? 'bg-stone-100'
               : laporan.selisih < 0
                 ? 'bg-red-50 text-red-800'
-                : 'bg-amber-50 text-amber-900'
+                : 'bg-sage-50 text-sage-900'
           }`}
         >
           <dt>Selisih</dt>
@@ -305,7 +355,7 @@ function Laporan({ laporan }: { laporan: LaporanShift | null }) {
 function Baris({ label, nilai, tebal }: { label: string; nilai: string; tebal?: boolean }) {
   return (
     <div className={`flex justify-between gap-3 ${tebal ? 'font-semibold' : ''}`}>
-      <dt className="text-slate-600">{label}</dt>
+      <dt className="text-stone-600">{label}</dt>
       <dd className="tabular-nums">{nilai}</dd>
     </div>
   )

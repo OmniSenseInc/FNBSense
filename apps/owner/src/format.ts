@@ -1,0 +1,111 @@
+/**
+ * Data mentah -> teks yang dibaca kasir. Fungsi murni saja, nol komponen.
+ *
+ * Sengaja disalin dari apps/customer, bukan dibagi lewat paket bersama: dua
+ * fungsi kecil tak cukup mahal untuk membayar ongkos workspace/monorepo.
+ * Kalau salinannya sudah mencapai lima, barulah angkat jadi paket.
+ */
+
+/** Uang di sistem ini integer rupiah, bukan pecahan — jadi nol desimal. */
+export function rupiah(nilai: number): string {
+  // Total yang rusak (lihat petakanPesanan) tak boleh tampil sebagai angka apa
+  // pun; kasir harus melihat bahwa nilainya tidak diketahui.
+  if (!Number.isFinite(nilai)) return 'Rp —'
+  return 'Rp ' + new Intl.NumberFormat('id-ID').format(nilai)
+}
+
+/**
+ * Teks isian -> jumlah bahan, atau null kalau tak masuk akal.
+ *
+ * Titik BOLEH di sini, beda dari isian rupiah: bahan memang bisa 1.5 liter.
+ * Yang ditolak adalah pecahan tiga digit — "1.000" hampir selalu berarti seribu
+ * dalam tulisan Indonesia, sementara JavaScript membacanya sebagai satu.
+ * Menerimanya diam-diam berarti opname yang menghapus 999 dari saldo, atau resep
+ * yang memotong seperseribu bahan tiap gelas dan membuat gudang tampak abadi.
+ *
+ * Dipakai layar stok DAN panel resep — dua tempat yang memasukkan takaran bahan
+ * lewat papan ketik. Tinggal di sini, bukan disalin, supaya "1.000 itu seribu"
+ * cuma diputuskan sekali.
+ */
+export function keJumlah(teks: string): number | null {
+  const bersih = teks.trim()
+  if (!/^\d+(\.\d{1,2})?$/.test(bersih)) return null
+  const angka = Number(bersih)
+
+  return Number.isFinite(angka) ? angka : null
+}
+
+/**
+ * Penanda tempat di kepala kartu: nama meja, "Bawa pulang", atau tak ada.
+ *
+ * Inilah pembeda terkuat yang dipegang kasir saat dua pesanan bertotal sama
+ * masuk berbarengan — notifikasi mutasi QRIS statis tak membawa apa pun selain
+ * nominal, jadi mejalah yang menentukan siapa yang sedang berdiri di depannya.
+ */
+export function labelMeja(meja: string | null, tipe: string | null): string | null {
+  if (meja) return meja
+  // Tanpa meja TAPI bukan takeaway berarti datanya sendiri janggal (mejanya
+  // dihapus setelah pesanan dibuat). Diam lebih baik daripada menulis "Bawa
+  // pulang" untuk pesanan yang sebenarnya sedang duduk di sebuah meja — kasir
+  // akan mencari orang yang tak pernah antre di depan.
+  return tipe === 'takeaway' ? 'Bawa pulang' : null
+}
+
+/**
+ * Sisa waktu sampai pesanan kedaluwarsa, dibulatkan KE ATAS ke menit.
+ *
+ * Menit, bukan detik: angka yang berdetak tiap detik menarik mata kasir ke
+ * layar padahal keputusannya tak berubah sedetik sekali. Pembulatan ke atas
+ * membuat batasnya jujur — selama masih tersisa waktu berapa pun hasilnya
+ * minimal 1, jadi 0 dan negatif berarti benar-benar sudah lewat.
+ *
+ * `sekarang` disuntik supaya fungsi ini bisa diuji tanpa membekukan jam sistem.
+ *
+ * ponytail: dibandingkan dengan jam PERANGKAT KASIR, bukan jam server. Tablet
+ * yang jamnya melenceng menampilkan sisa waktu yang melenceng sebesar itu juga.
+ * Diterima karena server tetap pemutus sebenarnya (`orders:expire` dan 409 saat
+ * konfirmasi), jadi yang salah cuma tampilannya. Kalau kelak menggigit, kirim
+ * `server_time` di respons antrean dan hitung selisihnya sekali di `panggil()`.
+ */
+export function sisaMenit(iso: string | null, sekarang: number = Date.now()): number | null {
+  if (!iso) return null
+  const batas = new Date(iso).getTime()
+  // Tanggal tak terbaca -> null, BUKAN 0. Nol akan tampil sebagai "lewat batas"
+  // dan mendorong kasir menyimpulkan sesuatu dari data yang rusak.
+  if (Number.isNaN(batas)) return null
+  return Math.ceil((batas - sekarang) / 60_000)
+}
+
+/**
+ * Jam pesanan masuk, "14:05". Kasir memakainya untuk memutuskan sendiri siapa
+ * yang lebih dulu menunggu saat beberapa orang berdiri bersamaan.
+ */
+export function jam(iso: string | null): string {
+  if (!iso) return '—'
+  const waktu = new Date(iso)
+  if (Number.isNaN(waktu.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(waktu)
+}
+
+/**
+ * Tanggal DAN jam, mis. "2 Agu 14.05".
+ *
+ * Untuk daftar yang bisa memuat beberapa hari sekaligus — inbox pemberitahuan
+ * menyimpan 100 terakhir, dan di kafe yang sepi itu bisa membentang seminggu.
+ * jam() saja akan menampilkan peringatan stok tiga hari lalu sebagai "14.05",
+ * yang dibaca kasir sebagai kejadian siang tadi.
+ */
+export function tanggalJam(iso: string | null): string {
+  if (!iso) return '—'
+  const waktu = new Date(iso)
+  if (Number.isNaN(waktu.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(waktu)
+}

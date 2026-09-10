@@ -6,22 +6,16 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { ambilAntrean, ambilSetelan, hitungBelumDibaca, peranSaya } from './api'
+import { ambilAntrean, hitungBelumDibaca } from './api'
 import LayarAntrean from './LayarAntrean'
 
 // Seluruh modul api diganti: layar ini tak boleh menyentuh jaringan, dan yang
 // sedang diuji memang cuma cara ia MENYAJIKAN data yang sudah diterima.
 vi.mock('./api', () => ({
   ambilAntrean: vi.fn(),
-  ambilSetelan: vi.fn(),
   batalkanPesanan: vi.fn(),
   konfirmasiBayar: vi.fn(),
   logout: vi.fn(),
-  // Wajib ikut di-mock walau layar ini cuma memakainya untuk satu tautan:
-  // modul yang di-mock diganti SELURUHNYA, jadi ekspor yang lupa didaftarkan
-  // jadi undefined dan komponennya gagal dirender — persis yang terjadi saat
-  // peranSaya() ditambahkan.
-  peranSaya: vi.fn(),
   hitungBelumDibaca: vi.fn(),
   SESI_HABIS: 'SESI_HABIS',
 }))
@@ -52,6 +46,9 @@ function pesanan(
     customer_name: 'Vincent',
     grand_total: ubah.grand_total ?? 45_000,
     subtotal: ubah.grand_total ?? 45_000,
+    grossSubtotal: ubah.grand_total ?? 45_000,
+    diskon: 0,
+    promo: null,
     layanan: 0,
     pajak: 0,
     caraBayar: null,
@@ -79,14 +76,7 @@ function tampilkan(daftar: ReturnType<typeof pesanan>[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // clearAllMocks membersihkan catatan panggilan, BUKAN nilai kembalian yang
-  // sudah dipasang. Tanpa baris ini, satu test yang menyetel peran 'owner'
-  // membuat test sesudahnya ikut melihat tautan Setelan tanpa memintanya.
-  ;(peranSaya as Mock).mockReturnValue(null)
   ;(hitungBelumDibaca as Mock).mockResolvedValue(0)
-  // Outlet yang sudah punya QRIS = keadaan normal. Test yang peduli soal
-  // spanduknya menyetel sendiri.
-  ;(ambilSetelan as Mock).mockResolvedValue({ qrisUrl: '/storage/qris/abc.png' })
 })
 
 // Pembersihan EKSPLISIT. Auto-cleanup @testing-library/react menyantol ke
@@ -95,60 +85,6 @@ beforeEach(() => {
 // dari test sebelumnya tetap menempel di dokumen, dan query berikutnya
 // menemukan dua kartu bernomor sama.
 afterEach(cleanup)
-
-describe('spanduk outlet belum punya QRIS', () => {
-  it('owner diberi tahu sebelum ada yang mengeluh', async () => {
-    // Antrean kosong terlihat normal. Tanpa spanduk ini, satu-satunya kabar
-    // bahwa outletnya belum bisa menerima pembayaran dari meja datang dari
-    // pelanggan pertama yang kebingungan.
-    ;(peranSaya as Mock).mockReturnValue('owner')
-    ;(ambilSetelan as Mock).mockResolvedValue({ qrisUrl: null })
-    tampilkan([])
-
-    expect(await screen.findByText(/belum punya QRIS/)).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Pasang sekarang' })).toBeTruthy()
-  })
-
-  it('outlet yang sudah punya QRIS tidak diganggu', async () => {
-    // Peringatan yang muncul terus akan diabaikan saat benar-benar penting.
-    ;(peranSaya as Mock).mockReturnValue('owner')
-    tampilkan([pesanan({})])
-
-    await screen.findByText('A-001')
-    expect(screen.queryByText(/belum punya QRIS/)).toBeNull()
-  })
-
-  it('kasir tidak ditanyai sama sekali', async () => {
-    // Dia tak bisa berbuat apa-apa soal itu, dan endpoint-nya pun membalas 403
-    // untuknya — permintaan itu murni pemborosan di jam sibuk.
-    ;(peranSaya as Mock).mockReturnValue('cashier')
-    ;(ambilSetelan as Mock).mockResolvedValue({ qrisUrl: null })
-    tampilkan([pesanan({})])
-
-    await screen.findByText('A-001')
-    expect(ambilSetelan as Mock).not.toHaveBeenCalled()
-    expect(screen.queryByText(/belum punya QRIS/)).toBeNull()
-  })
-})
-
-describe('tautan setelan outlet', () => {
-  it('owner melihatnya', async () => {
-    ;(peranSaya as Mock).mockReturnValue('owner')
-    tampilkan([pesanan({})])
-
-    expect(await screen.findByRole('link', { name: 'Setelan' })).toBeTruthy()
-  })
-
-  it('kasir tidak ditawari pintu yang pasti terkunci', async () => {
-    // Bukan penjaga izin — servernya yang menolak. Ini soal tidak menaruh
-    // tombol yang hasilnya cuma 403 di layar orang yang sedang sibuk.
-    ;(peranSaya as Mock).mockReturnValue('cashier')
-    tampilkan([pesanan({})])
-
-    await screen.findByText('A-001')
-    expect(screen.queryByRole('link', { name: 'Setelan' })).toBeNull()
-  })
-})
 
 describe('klaim "sudah bayar" dari pelanggan', () => {
   it('muncul di kartu dengan jamnya', async () => {

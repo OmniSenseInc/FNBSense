@@ -52,6 +52,34 @@ class IngredientController extends Controller
         ])->values());
     }
 
+    /**
+     * Semua bahan milik satu tenant — service-to-service untuk Inventory.
+     *
+     * Dipakai Inventory supaya layar stok menampilkan bahan yang BELUM pernah
+     * distok (belum punya baris saldo) dan owner bisa restock dari sana. Tanpa
+     * ini, bahan yang baru dibuat di Catalog tak pernah muncul di layar stok
+     * dan saldonya tak bisa diisi sama sekali.
+     *
+     * Bare array, sepola batch(): dibaca mesin, bukan manusia.
+     */
+    public function all(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tenant' => ['required', 'uuid'],
+        ]);
+
+        $bahan = Ingredient::query()
+            ->where('tenant_id', $validated['tenant'])
+            ->orderBy('name')
+            ->get(['id', 'name', 'unit']);
+
+        return response()->json($bahan->map(fn (Ingredient $b) => [
+            'id' => $b->id,
+            'name' => $b->name,
+            'unit' => $b->unit,
+        ])->values());
+    }
+
     public function index(Request $request): JsonResponse
     {
         $ingredients = Ingredient::query()

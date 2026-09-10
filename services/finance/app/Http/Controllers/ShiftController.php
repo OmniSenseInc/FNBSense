@@ -7,19 +7,20 @@ namespace App\Http\Controllers;
 use App\Enums\ShiftStatus;
 use App\Http\Requests\CloseShiftRequest;
 use App\Http\Requests\OpenShiftRequest;
-use App\Models\Sale;
 use App\Models\Shift;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Shift kasir + laporan keuangan per-shift (F5c). Penjualan diatribusikan lewat
  * RENTANG WAKTU (outlet + paid_at dalam [opened_at, closed_at)) — sales tak
  * dimodifikasi, consumer F5b tak tersentuh. Semua di-scope tenant+outlet dari JWT.
+ *
+ * Bentuk API shift + hitungan laporannya tinggal di model Shift (toApiArray /
+ * financialReport) supaya ReportController — laporan owner/manajer — memakai
+ * bentuk & angka yang SAMA persis dengan layar kasir.
  */
 class ShiftController extends Controller
 {
@@ -43,7 +44,7 @@ class ShiftController extends Controller
             return response()->json(['message' => 'Sudah ada shift terbuka untuk outlet ini.'], 409);
         }
 
-        return response()->json(['data' => $this->present($shift)], 201);
+        return response()->json(['data' => $shift->toApiArray()], 201);
     }
 
     public function close(CloseShiftRequest $request, string $id): JsonResponse
@@ -65,7 +66,7 @@ class ShiftController extends Controller
                 'open_key' => null, // lepas guard → outlet boleh buka shift baru
             ]);
 
-            return response()->json(['data' => $this->present($shift, withReport: true)]);
+            return response()->json(['data' => $shift->toApiArray(withReport: true)]);
         });
     }
 
@@ -85,14 +86,40 @@ class ShiftController extends Controller
             ->where('status', ShiftStatus::Open)
             ->first();
 
-        return response()->json(['data' => $shift === null ? null : $this->present($shift, withReport: true)]);
+        return response()->json(['data' => $shift === null ? null : $shift->toApiArray(withReport: true)]);
+    }
+
+    /**
+     * Riwayat shift outlet ini (yang sudah DITUTUP), terbaru di atas.
+     *
+     * Berbeda dari `current`: yang itu shift berjalan (atau null), yang ini daftar
+     * masa lalu — inilah yang membuat shift tertutup TETAP terlihat setelah layar
+     * di-refresh (sebelumnya tak ada pintu baca untuknya). Dibatasi 20 terakhir:
+     * riwayat lebih dalam jadi urusan laporan owner, bukan layar kasir yang cuma
+     * butuh konteks beberapa hari terakhir.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $shifts = Shift::query()
+            ->where('tenant_id', $this->tenantId($request))
+            ->where('outlet_id', $this->outletId($request))
+            ->where('status', ShiftStatus::Closed)
+            ->orderByDesc('opened_at')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'data' => $shifts
+                ->map(fn (Shift $shift) => $shift->toApiArray(withReport: true))
+                ->values(),
+        ]);
     }
 
     public function show(Request $request, string $id): JsonResponse
     {
         $shift = $this->findScoped($request, $id);
 
-        return response()->json(['data' => $this->present($shift, withReport: true)]);
+        return response()->json(['data' => $shift->toApiArray(withReport: true)]);
     }
 
     private function findScoped(Request $request, string $id, bool $lock = false): Shift
@@ -107,74 +134,5 @@ class ShiftController extends Controller
         }
 
         return $query->firstOrFail(); // ModelNotFound → 404 (isolasi tenant/outlet)
-    }
-
-    /** @return array<string, mixed> */
-    private function present(Shift $shift, bool $withReport = false): array
-    {
-        $data = [
-            'id' => $shift->id,
-            'outlet_id' => $shift->outlet_id,
-            'status' => $shift->status->value,
-            'opened_by' => $shift->opened_by,
-            'opening_cash' => $shift->opening_cash,
-            'opened_at' => $shift->opened_at,
-            'closed_by' => $shift->closed_by,
-            'closing_cash' => $shift->closing_cash,
-            'closed_at' => $shift->closed_at,
-        ];
-
-        if ($withReport) {
-            $data['report'] = $this->report($shift);
-        }
-
-        return $data;
-    }
-
-    /**
-     * Laporan keuangan shift — dihitung dari `sales` di window, bukan kolom tersimpan.
-     * Shift masih open → window sampai now() (X-report berjalan); sudah closed →
-     * sampai closed_at (Z-report final).
-     *
-     * @return array<string, mixed>
-     */
-    private function report(Shift $shift): array
-    {
-        $upperBound = $shift->closed_at ?? Carbon::now();
-
-        $totalSales = (int) $this->salesInWindow($shift, $upperBound)->sum('grand_total');
-        $transactions = $this->salesInWindow($shift, $upperBound)->count();
-        // Hanya penjualan CASH yang masuk laci. QRIS tak menyentuh kas fisik →
-        // tak dihitung ke expected_cash (kalau ikut, selisih selalu bohong minus).
-        $cashSales = (int) $this->salesInWindow($shift, $upperBound)->where('payment_method', 'cash')->sum('grand_total');
-        $qrisSales = (int) $this->salesInWindow($shift, $upperBound)->where('payment_method', 'qris_static')->sum('grand_total');
-
-        $expectedCash = $shift->opening_cash + $cashSales;
-        $countedCash = $shift->closing_cash;                       // null saat masih open
-        // Selisih BOLEH negatif (kas kurang) — makanya dihitung, bukan disimpan
-        // di kolom unsigned. null selama shift belum ditutup.
-        $variance = $countedCash === null ? null : $countedCash - $expectedCash;
-
-        return [
-            'total_sales' => $totalSales,
-            'transactions' => $transactions,
-            'cash_sales' => $cashSales,
-            'qris_sales' => $qrisSales,
-            'opening_cash' => $shift->opening_cash,
-            'expected_cash' => $expectedCash,
-            'counted_cash' => $countedCash,
-            'cash_variance' => $variance,
-            'window' => ['from' => $shift->opened_at, 'to' => $shift->closed_at],
-        ];
-    }
-
-    /** Query dasar penjualan dalam window shift; half-open [opened_at, upper). */
-    private function salesInWindow(Shift $shift, Carbon $upperBound): Builder
-    {
-        return Sale::query()
-            ->where('tenant_id', $shift->tenant_id)
-            ->where('outlet_id', $shift->outlet_id)
-            ->where('paid_at', '>=', $shift->opened_at)
-            ->where('paid_at', '<', $upperBound);
     }
 }

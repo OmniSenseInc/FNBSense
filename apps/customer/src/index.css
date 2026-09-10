@@ -1,31 +1,67 @@
 @import "tailwindcss";
 
-/*
- * Kartu status yang baru berganti rasa. Dipakai bersama key={rasa} di
- * HalamanStatus: elemennya dipasang ulang saat rasanya berubah, jadi animasi
- * ini yang menarik mata ke kabar barunya — pelanggan sering baru menoleh ke HP
- * beberapa detik setelah statusnya berubah.
- *
- * Ditulis tangan, bukan lewat paket animasi: satu keyframe tak sepadan dengan
- * satu dependensi.
- */
+/* Palet FNBSense — beige + sage (sama persis dengan apps/staff). */
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --color-sage-50: #f5f7f2;
+  --color-sage-100: #e9eee1;
+  --color-sage-200: #d4dec6;
+  --color-sage-300: #b5c7a1;
+  --color-sage-400: #96b07e;
+  --color-sage-500: #7a9662;
+  --color-sage-600: #5f7a4c;
+  --color-sage-700: #4a5f3b;
+  --color-sage-800: #3a4b30;
+  --color-sage-900: #2d3a25;
+
+  --color-amber-50: var(--color-sage-50);
+  --color-amber-100: var(--color-sage-100);
+  --color-amber-200: var(--color-sage-200);
+  --color-amber-300: var(--color-sage-300);
+  --color-amber-400: var(--color-sage-400);
+  --color-amber-500: var(--color-sage-500);
+  --color-amber-600: var(--color-sage-600);
+  --color-amber-700: var(--color-sage-700);
+  --color-amber-800: var(--color-sage-800);
+  --color-amber-900: var(--color-sage-900);
+
+  --color-stone-50: #faf7f2;
+  --color-stone-100: #f4efe6;
+  --color-stone-200: #e9e1d2;
+  --color-stone-300: #d9cdb8;
+  --color-stone-400: #bfaf94;
+  --color-stone-500: #a2907a;
+  --color-stone-600: #85725f;
+  --color-stone-700: #68594a;
+  --color-stone-800: #4a4035;
+  --color-stone-900: #2e2821;
+
+  --color-slate-50: var(--color-stone-50);
+  --color-slate-100: var(--color-stone-100);
+  --color-slate-200: var(--color-stone-200);
+  --color-slate-300: var(--color-stone-300);
+  --color-slate-400: var(--color-stone-400);
+  --color-slate-500: var(--color-stone-500);
+  --color-slate-600: var(--color-stone-600);
+  --color-slate-700: var(--color-stone-700);
+  --color-slate-800: var(--color-stone-800);
+  --color-slate-900: var(--color-stone-900);
+}
+
+html {
+  background-color: var(--color-stone-50);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
 @keyframes muncul {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-  }
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
 }
-
-.muncul {
-  animation: muncul 0.35s ease-out;
-}
-
-/*
- * Hormati pengguna yang mematikan animasi di setelan sistemnya. Yang hilang
- * cuma geraknya — warna dan ikonnya, yang memikul kabarnya, tetap ada.
- */
+.muncul { animation: muncul 0.35s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .muncul {
-    animation: none;
-  }
+  .muncul { animation: none; }
 }

@@ -73,7 +73,7 @@ class StockTest extends TestCase
         $headers = $this->authHeaders($tenant, $outlet);
 
         $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
-        $this->palsukanCatalog();
+        $this->palsukanCatalog([['id' => $bahan, 'name' => 'Susu', 'unit' => 'ml']]);
 
         $res = $this->withHeaders($headers)->getJson('/api/stock');
 
@@ -137,28 +137,26 @@ class StockTest extends TestCase
     }
 
     /**
-     * Id bahan dikirim ke Catalog sekali saja per id, bukan sekali per baris.
-     *
-     * Belum jadi soal hari ini (satu outlet, satu baris per bahan), tapi daftar
-     * id yang menggelembung adalah cara paling sunyi membuat query string
-     * melewati batas panjang URL — dan gagalnya muncul sebagai 414 dari proxy,
-     * bukan sebagai apa pun yang menyebut stok.
+     * Bahan yang dibuat di Catalog tapi BELUM pernah distok tetap tampil di layar
+     * stok dengan saldo 0 — inilah jalan bagi owner untuk restock pertama kali.
+     * Sebelumnya bahan baru tak pernah muncul (tak punya baris saldo), dan karena
+     * tombol "Barang masuk" menempel pada baris yang ada, saldonya tak bisa diisi
+     * sama sekali (buntu).
      */
-    public function test_id_bahan_tak_dikirim_dobel_ke_catalog(): void
+    public function test_bahan_belum_distok_tampil_dengan_saldo_nol(): void
     {
         [$tenant, $outlet, $bahan] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
-        $headers = $this->authHeaders($tenant, $outlet);
+        $this->palsukanCatalog([['id' => $bahan, 'name' => 'Susu Full Cream', 'unit' => 'ml']]);
 
-        $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
-        $this->withHeaders($headers)->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 2000]);
-        $this->palsukanCatalog();
-
-        $this->withHeaders($headers)->getJson('/api/stock')->assertOk();
-
-        Http::assertSent(function ($request) use ($bahan) {
-            return str_contains($request->url(), '/api/ingredient')
-                && substr_count($request->url(), $bahan) === 1;
-        });
+        $this->withHeaders($this->authHeaders($tenant, $outlet))
+            ->getJson('/api/stock')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.ingredient_id', $bahan)
+            ->assertJsonPath('data.0.ingredient_name', 'Susu Full Cream')
+            ->assertJsonPath('data.0.qty_on_hand', 0)
+            ->assertJsonPath('data.0.min_stock', 0)
+            ->assertJsonPath('data.0.updated_at', null);
     }
 
     /** Restock kedua akumulatif; saldo == jumlah seluruh movement (invarian ledger). */
@@ -210,7 +208,7 @@ class StockTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 1);
     }
 
-    /** index di-scope outlet: outlet lain (tenant sama) tak melihat saldo ini. */
+    /** index di-scope outlet: outlet lain (tenant sama) melihat saldonya SENDIRI (0), bukan saldo outlet ini. */
     public function test_saldo_di_scope_per_outlet(): void
     {
         $tenant = (string) Str::uuid();
@@ -220,11 +218,14 @@ class StockTest extends TestCase
         $this->withHeaders($this->authHeaders($tenant, $outletA))
             ->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
 
-        // Owner outlet B (tenant sama) lihat daftarnya sendiri — kosong.
+        // Owner outlet B (tenant sama) melihat bahan yang sama (dari Catalog),
+        // tapi saldonya 0 — bukan 5000 milik outlet A.
+        $this->palsukanCatalog([['id' => $bahan, 'name' => 'Susu', 'unit' => 'ml']]);
         $this->withHeaders($this->authHeaders($tenant, $outletB))
             ->getJson('/api/stock')
             ->assertOk()
-            ->assertJsonCount(0, 'data');
+            ->assertJsonPath('data.0.ingredient_id', $bahan)
+            ->assertJsonPath('data.0.qty_on_hand', 0);
     }
 
     /** Anti-IDOR: adjust dari outlet A atas bahan yang hanya distok outlet B
@@ -298,7 +299,7 @@ class StockTest extends TestCase
         $this->withHeaders($this->authHeaders($tenant, $outlet))
             ->postJson('/api/stock/restock', ['ingredient_id' => $bahan, 'qty' => 5000]);
 
-        $this->palsukanCatalog();
+        $this->palsukanCatalog([['id' => $bahan, 'name' => 'Susu', 'unit' => 'ml']]);
 
         // Kasir BOLEH lihat saldo (200) — perubahan RBAC F8a-5.
         $this->withHeaders($this->authHeaders($tenant, $outlet, 'cashier'))

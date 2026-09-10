@@ -1,50 +1,40 @@
 import { BrowserRouter, Route, Routes } from 'react-router'
+import { Coffee, ScanLine } from 'lucide-react'
+import { NAMA_KAFE } from './api'
 import HalamanMenu from './HalamanMenu'
 import HalamanRingkasan from './HalamanRingkasan'
 import HalamanStatus from './HalamanStatus'
 import LayoutMeja from './LayoutMeja'
 
-/**
- * Kerangka rute app pelanggan. Sengaja tipis — semua isi ada di halamannya.
- *
- * qrToken diambil dari URL, bukan disimpan di state: pelanggan bisa refresh,
- * menutup tab lalu membukanya lagi dari riwayat, atau mengirim tautannya ke
- * teman semeja. Semuanya jalan karena mejanya tertulis di alamat.
- */
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Rute induk memegang meja + menu + keranjang; anak-anaknya cuma
-            layar. Tiap layar punya alamat sendiri supaya refresh, tombol
-            back HP, dan berbagi tautan berperilaku sebagaimana mestinya. */}
         <Route path="/t/:qrToken" element={<LayoutMeja />}>
           <Route index element={<HalamanMenu />} />
           <Route path="pesan" element={<HalamanRingkasan />} />
         </Route>
-        {/* Alamat status bisa di-bookmark & di-refresh: pelanggan menunggu
-            pesanannya, HP-nya bisa mati layar atau tab-nya tertutup.
-
-            Mejanya ikut di alamat supaya tombol "kembali ke menu" punya tujuan.
-            Alternatifnya — server mengirim qr_token di respons status — DITOLAK:
-            token itu kredensial cetak yang membuka meja bagi siapa pun yang
-            memegangnya, dan mengirimkannya ke HP pelanggan persis melahirkan
-            masalah "URL meja dipakai orang luar" yang sedang kita hindari.
-
-            Sengaja BUKAN anak LayoutMeja walau alamatnya bersarang: halaman
-            status tak butuh menu, dan menjadikannya anak berarti tiap kali
-            layar ini dibuka seluruh katalog ikut diunduh tanpa dipakai. */}
         <Route path="/t/:qrToken/order/:id" element={<HalamanStatus />} />
-        {/* Buka alamat kosong = belum scan apa pun. Jangan tampilkan layar
-            putih; beri tahu apa yang harus dilakukan. */}
         <Route
           path="*"
           element={
-            <div className="mx-auto max-w-md px-4 py-16 text-center">
-              <p className="text-base font-semibold">Scan QR di meja</p>
-              <p className="mt-1 text-sm text-slate-600">
-                Menu terbuka otomatis setelah QR di meja kamu dipindai.
-              </p>
+            <div className="min-h-screen flex items-center justify-center bg-stone-50 px-6">
+              <div className="text-center max-w-sm">
+                <div className="mx-auto mb-6 w-24 h-24 rounded-3xl bg-sage-100 flex items-center justify-center">
+                  <Coffee size={44} strokeWidth={1.5} className="text-sage-600" />
+                </div>
+                <h1 className="text-2xl font-bold text-stone-800 mb-2">{NAMA_KAFE}</h1>
+                <p className="text-stone-500 text-sm leading-relaxed mb-8">
+                  Menu bisa langsung kamu lihat setelah memindai kode QR yang ada di meja kafe.
+                </p>
+                <div className="inline-flex items-center gap-2.5 px-6 py-3 bg-sage-600 text-white font-semibold rounded-full text-sm">
+                  <ScanLine size={18} strokeWidth={2} />
+                  <span>Scan QR di meja</span>
+                </div>
+                <p className="mt-8 text-xs text-stone-400">
+                  Tanya kasir kalau kode QR di meja tidak terbaca.
+                </p>
+              </div>
             </div>
           }
         />

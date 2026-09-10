@@ -227,6 +227,30 @@ class AuthTest extends TestCase
             ->assertForbidden();
     }
 
+    /**
+     * Akun yang DIHAPUS setelah token terbit: tokennya masih sah, tapi `me`
+     * harus membedakan ini dari token rusak — 403, bukan 401. Inilah yang
+     * dipakai app kasir/owner untuk memaksa logout tanpa menunggu token
+     * kedaluwarsa (sampai 15 menit).
+     */
+    public function test_me_akun_dihapus_dibalas_403_bukan_401(): void
+    {
+        $token = $this->tokenForNewOwner();
+        $user = User::firstOrFail();
+
+        $user->delete(); // soft delete — simulasi kasir yang dihapus owner
+
+        // Satu test = satu instance app, dan guard JWT adalah singleton yang
+        // meng-cache user dari request register (via login()). Tanpa ini, `me`
+        // memakai user cache yang basi — padahal di produksi tiap request punya
+        // guard sendiri dan cache ini tak pernah ada.
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($token)
+            ->getJson('/api/auth/me')
+            ->assertForbidden();
+    }
+
     public function test_logout_mematikan_token(): void
     {
         $token = $this->tokenForNewOwner();
@@ -311,5 +335,41 @@ class AuthTest extends TestCase
         $this->withToken($token)
             ->postJson('/api/auth/refresh')
             ->assertUnauthorized();
+    }
+
+    public function test_register_ditutup_saat_gerbang_nonaktif(): void
+    {
+        config(['auth.register_open' => false]);
+
+        $this->postJson('/api/auth/register', [
+            'business_name' => 'Kafe Gelap',
+            'name' => 'Orang',
+            'email' => 'gelap@example.test',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])->assertForbidden()->assertJson(['message' => 'Pendaftaran mandiri sedang ditutup. Hubungi pengelola untuk membuat akun.']);
+
+        // Tidak ada tenant/bisnis apapun yang lahir dari percobaan itu.
+        $this->assertEquals(0, \App\Models\Tenant::count());
+    }
+
+    public function test_login_gagal_tercatat_di_audit_keamanan(): void
+    {
+        config(['auth.register_open' => true]);
+        $this->postJson('/api/auth/register', [
+            'business_name' => 'Kafe Audit',
+            'name' => 'Audit',
+            'email' => 'audit@example.test',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
+
+        $this->postJson('/api/auth/login', ['email' => 'audit@example.test', 'password' => 'SALAH!!!'])
+            ->assertUnauthorized();
+
+        $this->assertDatabaseHas('security_events', [
+            'type' => 'login_failed',
+            'email' => 'audit@example.test',
+        ]);
     }
 }

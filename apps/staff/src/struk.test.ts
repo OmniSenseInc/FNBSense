@@ -15,6 +15,9 @@ function pesanan(ubah: Partial<Pesanan> = {}): Pesanan {
     customer_name: 'Vincent',
     grand_total: 81_200,
     subtotal: 70_000,
+    grossSubtotal: 70_000,
+    diskon: 0,
+    promo: null,
     layanan: 3_500,
     pajak: 7_700,
     caraBayar: 'qris_static',
@@ -124,10 +127,28 @@ describe('barisStruk', () => {
     // Diberi subtotal yang sengaja tak cocok dengan jumlah itemnya. Struk yang
     // menghitung sendiri akan "memperbaiki" ini diam-diam — dan sejak saat itu
     // angka di kertas berbeda dari angka di laporan.
-    const isi = teksPenuh(barisStruk(pesanan({ subtotal: 99_999 }), OUTLET, 32))
+    const isi = teksPenuh(barisStruk(pesanan({ grossSubtotal: 99_999 }), OUTLET, 32))
 
     expect(isi).toContain('Rp 99.999')
     expect(isi).not.toContain('Rp 70.000')
+  })
+
+  it('mencetak potongan promo sebagai baris sendiri, hilang saat nol', () => {
+    // Promo opsional: barisnya muncul HANYA saat ada potongan, menyebut nama
+    // promonya (bukan "Diskon" generik), dan nilainya negatif.
+    const dengan = teksPenuh(
+      barisStruk(
+        pesanan({ grossSubtotal: 80_000, subtotal: 70_000, diskon: 10_000, promo: 'Diskon 10%' }),
+        OUTLET,
+        32,
+      ),
+    )
+
+    expect(dengan).toContain('Diskon 10%')
+    expect(dengan).toContain('-Rp 10.000')
+
+    const tanpa = teksPenuh(barisStruk(pesanan(), OUTLET, 32))
+    expect(tanpa).not.toContain('Diskon')
   })
 
   it('catatan item ikut tercetak dan menjorok', () => {

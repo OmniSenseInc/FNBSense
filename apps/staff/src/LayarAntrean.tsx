@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 import { totalKembar, urutkanAntrean } from './antrean'
 import {
   ambilAntrean,
-  ambilSetelan,
   batalkanPesanan,
-  hitungBelumDibaca,
   konfirmasiBayar,
-  logout,
-  peranSaya,
   SESI_HABIS,
   type CaraBayar,
   type Pesanan,
@@ -26,9 +22,6 @@ import { jam, labelMeja, rupiah, sisaMenit } from './format'
  * akan berdetak di antara dua polling tanpa membawa kabar baru.
  */
 const JEDA_MS = 5000
-
-/** Jeda lonceng. Peringatan stok tidak berubah per detik. */
-const JEDA_LONCENG_MS = 30_000
 
 /**
  * Di bawah ini sisa waktu berhenti jadi keterangan dan mulai jadi peringatan.
@@ -63,14 +56,6 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
   const [kirimId, setKirimId] = useState<string | null>(null)
   /** Dinaikkan untuk memaksa muat ulang segera, tanpa menunggu jeda 5 detik. */
   const [versi, setVersi] = useState(0)
-  // Dibaca sekali, bukan tiap render: peran tak berubah selama satu sesi, dan
-  // membacanya ulang berarti mengurai JWT lima puluh kali per menit tanpa satu
-  // pun jawaban baru.
-  const [owner] = useState(() => peranSaya() === 'owner')
-  /** Outlet ini belum punya QRIS — cuma diperiksa untuk owner. */
-  const [tanpaQris, setTanpaQris] = useState(false)
-
-  const [belumDibaca, setBelumDibaca] = useState(0)
 
   // Lewat ref supaya identitas fungsi dari App tak pernah memicu effect
   // menyalakan polling kedua yang berjalan berdampingan.
@@ -109,73 +94,6 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
       window.clearTimeout(timer)
     }
   }, [versi])
-
-  /**
-   * Angka di lonceng.
-   *
-   * 30 detik, bukan 5 detik seperti antrean: peringatan stok tidak berubah per
-   * detik, dan menyamakannya berarti ratusan permintaan tambahan tiap jam
-   * untuk angka yang hampir selalu sama.
-   *
-   * Kegagalannya sengaja ditelan tanpa pesan. Notification adalah service
-   * KETIGA yang harus hidup; kalau ia mati, kasir tetap harus bisa menerima
-   * pembayaran. Layar antrean tak boleh menampilkan galat merah untuk sesuatu
-   * yang tak menghalangi pekerjaannya sama sekali.
-   */
-  useEffect(() => {
-    let batal = false
-    let timer = 0
-
-    async function hitung() {
-      try {
-        const jumlah = await hitungBelumDibaca()
-        if (!batal) setBelumDibaca(jumlah)
-      } catch {
-        // Diam. Lihat alasan di atas.
-      }
-      if (!batal) timer = window.setTimeout(hitung, JEDA_LONCENG_MS)
-    }
-
-    hitung()
-
-    return () => {
-      batal = true
-      window.clearTimeout(timer)
-    }
-  }, [])
-
-  /**
-   * Satu pertanyaan sekali buka, khusus owner: sudah ada QRIS atau belum.
-   *
-   * Ini menutup lubang onboarding yang tak kelihatan dari mana pun. Owner baru
-   * membuka antrean yang kosong — memang belum ada pesanan — dan tak ada apa pun
-   * di layar yang memberi tahu bahwa outletnya belum bisa menerima pembayaran
-   * dari meja. Dia baru tahu setelah pelanggan pertamanya mengeluh.
-   *
-   * Kasir tidak ditanya sama sekali: dia tak bisa berbuat apa-apa soal itu, dan
-   * endpoint-nya pun akan membalas 403 untuknya.
-   */
-  useEffect(() => {
-    if (!owner) return
-
-    let batal = false
-
-    ambilSetelan()
-      .then((setelan) => {
-        if (!batal) setTanpaQris(setelan.qrisUrl === null)
-      })
-      .catch(() => {
-        // Sengaja didiamkan, dan ini satu-satunya tempat di layar ini yang
-        // boleh begitu: spanduknya tambahan, bukan pekerjaan utama. Gagal
-        // memuatnya tak boleh menampilkan galat di atas antrean yang justru
-        // sedang bekerja normal — dan sesi yang benar-benar habis sudah
-        // ditangani polling antrean di bawah.
-      })
-
-    return () => {
-      batal = true
-    }
-  }, [owner])
 
   async function terima(pesanan: Pesanan, cara: CaraBayar) {
     if (kirimId !== null) return
@@ -228,11 +146,6 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
     }
   }
 
-  async function keluar() {
-    await logout()
-    keluarRef.current()
-  }
-
   // Dihitung sekali per render, bukan di dalam map(): memeriksanya per kartu
   // berarti menyusuri seluruh daftar sekali untuk setiap barisnya.
   const kembar = totalKembar(daftar ?? [])
@@ -242,109 +155,15 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
   const antrean = daftar === null ? null : urutkanAntrean(daftar)
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold">Menunggu pembayaran</h1>
-          <p className="text-sm text-slate-600">
-            {daftar === null ? 'Memuat…' : `${daftar.length} pesanan`}
-          </p>
-        </div>
-        {/* Bunyinya "perangkat ini", bukan "keluar dari semua": token yang
-            sudah terbit di perangkat lain tak bisa dicabut (lihat
-            SECURITY_TODO). Tombol harus jujur tentang apa yang dilakukannya. */}
-        <div className="flex items-center gap-2">
-          {/* Jalan menuju nota yang sudah dibayar. Ditaruh di sini, bukan di
-              dalam daftar: pesanan yang lunas SUDAH TIDAK ADA di antrean, jadi
-              tak ada baris mana pun yang bisa menuntun ke sana. */}
-          {/* Pesanan yang lunas hilang dari antrean, jadi tanpa dua tautan ini
-              tak ada baris mana pun yang bisa menuntun ke sana. */}
-          {/* Lonceng. Angkanya lencana, bukan tulisan: kasir harus bisa
-              menangkapnya dari sudut mata sambil melayani orang. */}
-          <Link
-            to="/notifikasi"
-            aria-label={
-              belumDibaca > 0 ? `Pemberitahuan, ${belumDibaca} belum dibaca` : 'Pemberitahuan'
-            }
-            className="relative rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            🔔
-            {belumDibaca > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-xs font-semibold text-white tabular-nums">
-                {/* Dibatasi 9+: tiga digit merusak lebar tombol, dan angka
-                    persisnya toh tak mengubah apa pun yang dilakukan kasir. */}
-                {belumDibaca > 9 ? '9+' : belumDibaca}
-              </span>
-            )}
-          </Link>
-          <Link to="/dapur" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-            Dapur
-          </Link>
-          {/* Tanpa penjaga `owner`, beda dari Meja & Setelan di bawah: kasir
-              memang boleh melihat stok (role:cashier,owner di Inventory). */}
-          <Link to="/stok" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-            Stok
-          </Link>
-          <Link to="/riwayat" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-            Riwayat
-          </Link>
-          {/* Sepola /stok: kasir yang memegang laci, jadi tak ada penjaga owner
-              di sini maupun di Finance (`role:cashier,owner`). */}
-          <Link to="/shift" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-            Shift
-          </Link>
-          {/* Cuma untuk owner — dan cuma soal tidak menawarkan pintu yang pasti
-              terkunci. Kasir yang mengetik /setelan tetap ditolak server, bukan
-              oleh hilangnya tombol ini. */}
-          {owner && (
-            <>
-              <Link to="/menu" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-                Menu
-              </Link>
-              <Link to="/bahan" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-                Bahan
-              </Link>
-              <Link to="/meja" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-                Meja
-              </Link>
-              <Link to="/staf" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-                Karyawan
-              </Link>
-              <Link to="/setelan" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-                Setelan
-              </Link>
-            </>
-          )}
-          {/* DI LUAR blok owner: kasir justru yang paling butuh, karena
-              sandinya diketikkan orang lain saat akunnya dibuat. */}
-          <Link to="/sandi" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
-            Ganti sandi
-          </Link>
-          <button
-            type="button"
-            onClick={keluar}
-            className="rounded-md border border-slate-300 px-3 py-2 text-left text-sm"
-          >
-            Keluar dari perangkat ini
-          </button>
-        </div>
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 border-b border-stone-200 bg-white px-4 py-3">
+        <h1 className="text-base font-semibold text-stone-800">Pesanan masuk</h1>
+        <p className="text-sm text-stone-500">
+          {daftar === null ? 'Memuat…' : `${daftar.length} pesanan`}
+        </p>
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-4">
-        {/* Ditulis sebagai keterangan keadaan, bukan sebagai kesalahan: kafe
-            yang memang tak menerima QRIS akan melihatnya terus, dan menyebutnya
-            "error" berarti berbohong soal sesuatu yang mungkin disengaja.
-            Sengaja TIDAK bisa ditutup — spanduk yang bisa ditutup akan ditutup
-            di hari pertama lalu tak pernah dibaca lagi. */}
-        {tanpaQris && (
-          <p className="mb-4 rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
-            Outlet ini belum punya QRIS, jadi pelanggan diminta membayar di kasir.{' '}
-            <Link to="/setelan" className="font-semibold underline">
-              Pasang sekarang
-            </Link>
-          </p>
-        )}
-
         {galat && (
           <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             {galat}
@@ -352,14 +171,14 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
         )}
 
         {daftar !== null && daftar.length === 0 && (
-          <p className="py-16 text-center text-sm text-slate-600">
+          <p className="py-16 text-center text-sm text-stone-600">
             Belum ada pesanan yang menunggu dibayar.
           </p>
         )}
 
         <ul className="flex flex-col gap-3">
           {antrean?.map((pesanan) => (
-            <li key={pesanan.id} className="rounded-md border border-slate-200 bg-white p-4">
+            <li key={pesanan.id} className="rounded-md border border-stone-200 bg-white p-4">
               <div className="flex items-baseline justify-between gap-3">
                 {/* Meja berdiri sejajar nomor pesanan, bukan diselipkan di
                     baris nama: saat notifikasi mutasi cuma membawa nominal,
@@ -368,21 +187,21 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                 <p className="text-lg font-semibold">
                   <span className="tabular-nums">{pesanan.order_number}</span>
                   {labelMeja(pesanan.meja, pesanan.tipe) && (
-                    <span className="ml-2 text-slate-600">
+                    <span className="ml-2 text-stone-600">
                       · {labelMeja(pesanan.meja, pesanan.tipe)}
                     </span>
                   )}
                 </p>
-                <p className="text-sm text-slate-600">masuk {jam(pesanan.created_at)}</p>
+                <p className="text-sm text-stone-600">masuk {jam(pesanan.created_at)}</p>
               </div>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-stone-600">
                 {pesanan.customer_name}
                 {/* Niat pelanggan, bukan keputusan. Ditulis sebagai petunjuk
                     supaya kasir tak menganggapnya sudah pasti — orang berubah
                     pikiran di depan meja, dan yang masuk laporan harus yang
                     benar-benar diterima. */}
                 {pesanan.niatBayar && (
-                  <span className="text-slate-500">
+                  <span className="text-stone-500">
                     {' · mau bayar '}
                     {CARA_BAYAR.find((c) => c.nilai === pesanan.niatBayar)?.label ??
                       pesanan.niatBayar}
@@ -401,16 +220,26 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                     <span>
                       <span className="tabular-nums">{item.qty}×</span> {item.nama}
                       {item.note && (
-                        <span className="block text-slate-600">— {item.note}</span>
+                        <span className="block text-stone-600">— {item.note}</span>
                       )}
                     </span>
-                    <span className="tabular-nums text-slate-600">{rupiah(item.total)}</span>
+                    <span className="tabular-nums text-stone-600">{rupiah(item.total)}</span>
                   </li>
                 ))}
               </ul>
 
-              <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
-                <p className="text-sm text-slate-600">Total</p>
+              {/* Promo sudah dipotong server di grand_total. Tanpa baris ini
+                  kasir yang menjumlahkan item di kepalanya melihat totalnya
+                  "kurang" dan mengira ada yang salah — padahal pelanggannya
+                  memang berhak diskon. */}
+              {pesanan.diskon > 0 && (
+                <p className="mt-2 rounded-md bg-emerald-50 px-2 py-1 text-sm text-emerald-900">
+                  Promo: {pesanan.promo ?? 'Diskon'} — hemat {rupiah(pesanan.diskon)}
+                </p>
+              )}
+
+              <div className="mt-3 flex items-center justify-between border-t border-stone-200 pt-3">
+                <p className="text-sm text-stone-600">Total</p>
                 <p className="text-lg font-semibold tabular-nums">{rupiah(pesanan.grand_total)}</p>
               </div>
 
@@ -430,7 +259,7 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                   di HP-nya, jadi peringatannya harus ada di titik yang sama
                   dengan matanya. */}
               {kembar.has(pesanan.grand_total) && (
-                <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-sm text-amber-900">
+                <p className="mt-2 rounded-md bg-sage-100 px-2 py-1 text-sm text-sage-900">
                   Nominal sama dengan pesanan lain — cocokkan nama atau jam sebelum menerima.
                 </p>
               )}
@@ -448,7 +277,7 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                       type="button"
                       disabled={kirimId !== null}
                       onClick={() => terima(pesanan, cara.nilai)}
-                      className="grow rounded-md bg-slate-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
+                      className="grow rounded-md bg-stone-900 px-4 py-3 text-base font-semibold text-white disabled:opacity-50"
                     >
                       {kirimId === pesanan.id ? 'Menyimpan…' : `Terima ${cara.label}`}
                     </button>
@@ -457,7 +286,7 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                     type="button"
                     disabled={kirimId !== null}
                     onClick={() => setAksi(null)}
-                    className="rounded-md border border-slate-300 px-4 py-3 text-base disabled:opacity-50"
+                    className="rounded-md border border-stone-300 px-4 py-3 text-base disabled:opacity-50"
                   >
                     Kembali
                   </button>
@@ -484,7 +313,7 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                       type="button"
                       disabled={kirimId !== null}
                       onClick={() => setAksi(null)}
-                      className="rounded-md border border-slate-300 px-4 py-3 text-base disabled:opacity-50"
+                      className="rounded-md border border-stone-300 px-4 py-3 text-base disabled:opacity-50"
                     >
                       Kembali
                     </button>
@@ -498,14 +327,14 @@ export default function LayarAntrean({ onKeluar }: { onKeluar: () => void }) {
                   <button
                     type="button"
                     onClick={() => setAksi({ id: pesanan.id, mode: 'batal' })}
-                    className="rounded-md border border-slate-300 px-4 py-3 text-base"
+                    className="rounded-md border border-stone-300 px-4 py-3 text-base"
                   >
                     Batalkan
                   </button>
                   <button
                     type="button"
                     onClick={() => setAksi({ id: pesanan.id, mode: 'bayar' })}
-                    className="grow rounded-md border border-slate-900 px-4 py-3 text-base font-semibold"
+                    className="grow rounded-md border border-stone-900 px-4 py-3 text-base font-semibold"
                   >
                     Konfirmasi bayar
                   </button>
@@ -539,7 +368,7 @@ function SisaWaktu({ menit }: { menit: number | null }) {
   if (menit === null) return null
 
   if (menit > AMBANG_MENDESAK) {
-    return <p className="mt-1 text-sm text-slate-600">Sisa {menit} mnt untuk dibayar</p>
+    return <p className="mt-1 text-sm text-stone-600">Sisa {menit} mnt untuk dibayar</p>
   }
 
   const lewat = menit <= 0
@@ -547,7 +376,7 @@ function SisaWaktu({ menit }: { menit: number | null }) {
   return (
     <p
       className={`mt-1 inline-block rounded-md px-2 py-1 text-sm font-semibold ${
-        lewat ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'
+        lewat ? 'bg-red-100 text-red-800' : 'bg-sage-100 text-sage-900'
       }`}
     >
       {/* Kalimatnya menyuruh MEMERIKSA, bukan menolak — lihat catatan di atas. */}

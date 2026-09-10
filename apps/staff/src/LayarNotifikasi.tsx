@@ -12,8 +12,8 @@ import { tanggalJam } from './format'
  */
 const WARNA: Record<string, string> = {
   critical: 'border-red-300 bg-red-50',
-  warning: 'border-amber-300 bg-amber-50',
-  info: 'border-slate-200 bg-white',
+  warning: 'border-sage-300 bg-sage-50',
+  info: 'border-stone-200 bg-white',
 }
 
 /**
@@ -83,11 +83,11 @@ export default function LayarNotifikasi({ onKeluar }: { onKeluar: () => void }) 
   }
 
   return (
-    <div className="min-h-svh bg-slate-50 text-slate-900">
-      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+    <div className="min-h-svh bg-stone-50 text-stone-900">
+      <header className="sticky top-0 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
         <div>
           <h1 className="text-base font-semibold">Pemberitahuan</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-stone-600">
             {daftar === null
               ? 'Memuat…'
               : belum > 0
@@ -101,12 +101,12 @@ export default function LayarNotifikasi({ onKeluar }: { onKeluar: () => void }) 
               type="button"
               onClick={tandai}
               disabled={sibuk}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
+              className="rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50"
             >
               {sibuk ? 'Menandai…' : 'Tandai semua dibaca'}
             </button>
           )}
-          <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
             ← Antrean
           </Link>
         </div>
@@ -119,10 +119,10 @@ export default function LayarNotifikasi({ onKeluar }: { onKeluar: () => void }) 
           </p>
         )}
 
-        {daftar === null && !galat && <p className="text-sm text-slate-600">Memuat…</p>}
+        {daftar === null && !galat && <p className="text-sm text-stone-600">Memuat…</p>}
 
         {daftar !== null && daftar.length === 0 && (
-          <p className="py-16 text-center text-sm text-slate-600">
+          <p className="py-16 text-center text-sm text-stone-600">
             Belum ada pemberitahuan. Peringatan stok akan muncul di sini.
           </p>
         )}
@@ -146,8 +146,8 @@ export default function LayarNotifikasi({ onKeluar }: { onKeluar: () => void }) 
                   />
                 )}
               </div>
-              <p className="mt-1 text-sm text-slate-700">{n.isi}</p>
-              <p className="mt-1 text-xs text-slate-500 tabular-nums">{tanggalJam(n.waktu)}</p>
+              <p className="mt-1 text-sm text-stone-700">{n.isi}</p>
+              <p className="mt-1 text-xs text-stone-500 tabular-nums">{tanggalJam(n.waktu)}</p>
             </li>
           ))}
         </ul>

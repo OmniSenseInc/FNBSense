@@ -1,108 +1,46 @@
 import { useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { bacaToken } from './api'
+import Layout from './Layout'
 import LayarAntrean from './LayarAntrean'
-import LayarBahan from './LayarBahan'
 import LayarDapur from './LayarDapur'
 import LayarLogin from './LayarLogin'
-import LayarMeja from './LayarMeja'
-import LayarMenu from './LayarMenu'
 import LayarNota from './LayarNota'
 import LayarNotifikasi from './LayarNotifikasi'
+import LayarPos from './LayarPos'
 import LayarRiwayat from './LayarRiwayat'
-import LayarSetelan from './LayarSetelan'
-import LayarShift from './LayarShift'
 import LayarSandi from './LayarSandi'
-import LayarStaf from './LayarStaf'
+import LayarShift from './LayarShift'
 import LayarStok from './LayarStok'
 
 /**
- * Kerangka rute app kasir.
- *
- * Router masuk begitu nota berhenti jadi layar sekali-lewat. Selama ia cuma
- * hidup beberapa detik sesudah konfirmasi, alamat memang ongkos tanpa manfaat.
- * Begitu nota harus bisa DIBUKA ULANG, "bisa dibuka kapan saja" dan "punya
- * alamat" jadi satu hal yang sama.
- *
- * Login sengaja TETAP bukan alamat: "sudah masuk atau belum" bukan tujuan yang
- * perlu dibagikan atau di-bookmark, dan menjadikannya rute berarti menambah
- * penjaga di setiap rute lain untuk pertanyaan yang jawabannya sama di
- * mana-mana.
+ * App POS — layar kasir. Hanya transaksi & operasional harian: antrean, meja,
+ * dapur, nota, shift, riwayat, stok. Laporan/menu/bahan/karyawan sudah pindah
+ * ke app OWNER.
  */
 export default function App() {
-  // Dibaca sekali saat mount: kasir yang me-refresh tab di tengah shift tak
-  // perlu login ulang. Token yang ternyata sudah mati ketahuan pada permintaan
-  // pertama, dan layarnyalah yang memulangkannya ke sini.
   const [masuk, setMasuk] = useState(() => bacaToken() !== null)
-
   const keluar = () => setMasuk(false)
 
   return (
     <BrowserRouter>
       {masuk ? (
         <Routes>
-          <Route path="/" element={<LayarAntrean onKeluar={keluar} />} />
-          {/* Nota memakai id pesanan, bukan nomor pesanan: nomor dibangkitkan
-              acak dan diulang saat bentrok, sedangkan id yang dipegang server
-              tunggal. Alamat harus menunjuk satu pesanan, bukan sekumpulan
-              yang kebetulan bernomor sama. */}
-          <Route path="/riwayat" element={<LayarRiwayat onKeluar={keluar} />} />
-          {/* Inbox peringatan stok. Rute sendiri, bukan panel di antrean:
-              semua tujuan lain di app ini pun rute, dan di HP daftar selebar
-              penuh lebih terbaca daripada kotak yang menggantung. */}
-          <Route path="/notifikasi" element={<LayarNotifikasi onKeluar={keluar} />} />
-          {/* Punya alamat sendiri, bukan menumpang antrean: yang meracik minuman
-              dan yang menerima uang sering bukan orang yang sama. Alamat ini
-              dulu bernama /dibuat dan dipakai kasir; ia TIDAK ditulis ulang saat
-              jadi layar dapur, cuma diganti nama dan dibesarkan hurufnya —
-              kebutuhannya memang sudah identik sejak awal.
-
-              Alamat lama sengaja tak diberi pengalihan: app ini belum dipakai di
-              luar dev, jadi belum ada yang mem-bookmark-nya, dan route "*" di
-              bawah sudah memulangkan alamat asing ke antrean. */}
-          <Route path="/dapur" element={<LayarDapur onKeluar={keluar} />} />
-          {/* Kasir DAN owner, tak seperti /setelan dan /meja di bawah: kasir
-              yang sedang meracik perlu tahu bahannya masih cukup. Yang
-              dibedakan bukan siapa boleh melihat, melainkan siapa boleh
-              mengubah — dan mengubah tak ada di layar ini sama sekali. */}
-          <Route path="/stok" element={<LayarStok onKeluar={keluar} />} />
-          {/* Kasir DAN owner (`role:cashier,owner` di Finance): yang membuka
-              laci pagi dan menutupnya sore justru kasir, bukan pemilik. */}
-          <Route path="/shift" element={<LayarShift onKeluar={keluar} />} />
-          {/* Tak dijaga di sini: penjaganya `role:owner` di Ordering, dan
-              kasir yang memaksa alamat ini melihat form kosong dengan pesan
-              403 — bukan setelan outlet. Menambahkan penjaga kedua di layar
-              berarti dua tempat memutuskan hal yang sama, dan yang di sini
-              justru yang paling mudah dibohongi. */}
-          {/* Sama seperti /setelan & /meja: penjaganya `role:owner` di Catalog,
-              bukan di sini. Kasir yang memaksa alamat ini melihat pesan galat,
-              bukan menu yang bisa diubahnya. */}
-          <Route path="/menu" element={<LayarMenu onKeluar={keluar} />} />
-          {/* Alamat sendiri, sementara resep justru menumpang di /menu: bahan
-              adalah daftar induk yang berdiri lepas dari produk mana pun, dan
-              seringnya diisi sekali di awal lalu ditinggal. Resep sebaliknya —
-              ia tak berarti apa-apa tanpa produk yang dimilikinya. */}
-          <Route path="/bahan" element={<LayarBahan onKeluar={keluar} />} />
-          {/* Sama seperti /menu & /bahan: penjaganya `role:owner` di IAM. */}
-          <Route path="/staf" element={<LayarStaf onKeluar={keluar} />} />
-          {/* SEMUA peran, tak seperti /staf di atas: mengganti sandi sendiri
-              bukan wewenang owner melainkan kebersihan akun masing-masing.
-              Kasir yang diberi sandi awal oleh owner harus bisa
-              mempensiunkannya. */}
-          <Route path="/sandi" element={<LayarSandi onKeluar={keluar} />} />
-          <Route path="/setelan" element={<LayarSetelan onKeluar={keluar} />} />
-          {/* Sama seperti /setelan: penjaganya `role:owner` di Ordering, bukan
-              di sini. */}
-          <Route path="/meja" element={<LayarMeja onKeluar={keluar} />} />
-          <Route path="/nota/:id" element={<LayarNota onKeluar={keluar} />} />
-          {/* Alamat asing dikembalikan ke antrean, bukan dibiarkan jadi layar
-              putih — kasir tak punya cara menebak apa yang salah. */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route element={<Layout onKeluar={keluar} />}>
+            <Route path="/" element={<LayarAntrean onKeluar={keluar} />} />
+            <Route path="/antrean" element={<LayarAntrean onKeluar={keluar} />} />
+            <Route path="/pos" element={<LayarPos onKeluar={keluar} />} />
+            <Route path="/dapur" element={<LayarDapur onKeluar={keluar} />} />
+            <Route path="/nota/:id" element={<LayarNota onKeluar={keluar} />} />
+            <Route path="/notifikasi" element={<LayarNotifikasi onKeluar={keluar} />} />
+            <Route path="/riwayat" element={<LayarRiwayat onKeluar={keluar} />} />
+            <Route path="/shift" element={<LayarShift onKeluar={keluar} />} />
+            <Route path="/stok" element={<LayarStok onKeluar={keluar} />} />
+            <Route path="/sandi" element={<LayarSandi onKeluar={keluar} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
         </Routes>
       ) : (
-        // Alamatnya sengaja tak diubah saat sesi berakhir: kasir yang tokennya
-        // kedaluwarsa di layar nota kembali ke nota yang sama setelah masuk
-        // lagi, bukan dilempar ke antrean dan disuruh mencarinya ulang.
         <LayarLogin onMasuk={() => setMasuk(true)} />
       )}
     </BrowserRouter>

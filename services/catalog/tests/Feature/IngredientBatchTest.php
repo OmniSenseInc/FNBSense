@@ -141,4 +141,34 @@ class IngredientBatchTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('tenant');
     }
+
+    /** GET /api/ingredient/all — semua bahan satu tenant, buat layar stok Inventory. */
+    public function test_all_balikin_semua_bahan_tenant(): void
+    {
+        $tenantId = (string) Str::uuid();
+        $this->buatBahan($tenantId, 'Susu Full Cream', 'ml');
+        $this->buatBahan($tenantId, 'Kopi Arabika', 'g');
+
+        $this->withHeaders($this->serviceHeader())
+            ->getJson("/api/ingredient/all?tenant={$tenantId}")
+            ->assertOk()
+            ->assertJsonCount(2);
+    }
+
+    /** Semua-bahan tak boleh bocor bahan tenant lain. */
+    public function test_all_tidak_bocor_bahan_tenant_lain(): void
+    {
+        $this->buatBahan((string) Str::uuid(), 'Rahasia Dapur B');
+
+        $this->withHeaders($this->serviceHeader())
+            ->getJson('/api/ingredient/all?tenant='.Str::uuid())
+            ->assertOk()
+            ->assertJsonCount(0);
+    }
+
+    public function test_all_tanpa_token_ditolak_401(): void
+    {
+        $this->getJson('/api/ingredient/all?tenant='.Str::uuid())
+            ->assertUnauthorized();
+    }
 }

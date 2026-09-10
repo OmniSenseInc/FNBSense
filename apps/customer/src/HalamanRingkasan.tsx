@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router'
 import { MAKS_ITEM, kirimPesanan, susunPesanan, type CaraBayar } from './api'
 import { rupiah } from './format'
@@ -34,6 +34,9 @@ export default function HalamanRingkasan() {
   // menyuruhnya berjalan ke kasir.
   const [caraBayar, setCaraBayar] = useState<CaraBayar | null>(null)
   const [mengirim, setMengirim] = useState(false)
+  // Guard SINKRON untuk double-tap: setState reaktif baru mematikan tombol pada
+  // render berikutnya — dua klik di tick yang sama tetap jalan tanpa ini.
+  const kirimRef = useRef(false)
   const [galatKirim, setGalatKirim] = useState('')
 
   // Menandai bahwa keranjang dikosongkan SENGAJA, bukan karena pelanggan
@@ -59,8 +62,9 @@ export default function HalamanRingkasan() {
   const kirim = async () => {
     // Penjaga kedua, bukan cuma tombol yang mati: state bisa berubah di antara
     // render dan klik, dan payload tanpa cara bayar akan ditolak server.
-    if (caraBayar === null) return
+    if (kirimRef.current || caraBayar === null) return
 
+    kirimRef.current = true
     setMengirim(true)
     setGalatKirim('')
     try {
@@ -78,6 +82,7 @@ export default function HalamanRingkasan() {
       // mendarat di ringkasan pesanan yang sudah terkirim.
       navigate(`/t/${qrToken}/order/${pesanan.id}`, { replace: true })
     } catch (e) {
+      kirimRef.current = false
       setGalatKirim(e instanceof Error ? e.message : 'Pesanan gagal dikirim.')
       setMengirim(false)
     }

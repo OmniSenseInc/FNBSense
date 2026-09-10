@@ -339,4 +339,35 @@ class SaleConsumeTest extends TestCase
         $this->assertDatabaseMissing('sales', ['order_id' => $orderId]);          // rollback
         $this->assertDatabaseMissing('processed_orders', ['order_id' => $orderId]); // tak ditandai
     }
+
+    /** HPP dari unit_cost item -> dijumlahkan jadi cogs_total di sales. */
+    public function test_hpp_tercatat_dari_unit_cost(): void
+    {
+        [$tenant, $outlet, $orderId, $produk] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+
+        $outcome = $this->consumer()->handle($this->envelope(
+            $tenant, $outlet, $orderId,
+            ['subtotal' => 20000, 'service_charge' => 0, 'tax' => 0, 'grand_total' => 20000],
+            [['product_id' => $produk, 'qty' => 2, 'unit_price' => 10000, 'unit_cost' => 4000]],
+        ));
+
+        $this->assertSame(ConsumeOutcome::Ack, $outcome);
+        $this->assertDatabaseHas('sales', ['order_id' => $orderId, 'cogs_total' => 8000]); // 4000 × 2
+        $this->assertDatabaseHas('sale_items', ['product_id' => $produk, 'unit_cost' => 4000]);
+    }
+
+    /** Event lama (sebelum fitur HPP) tak punya unit_cost -> cogs_total 0, tetap Ack. */
+    public function test_event_tanpa_unit_cost_cogs_nol(): void
+    {
+        [$tenant, $outlet, $orderId, $produk] = [(string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid(), (string) Str::uuid()];
+
+        $outcome = $this->consumer()->handle($this->envelope(
+            $tenant, $outlet, $orderId,
+            ['subtotal' => 10000, 'service_charge' => 0, 'tax' => 0, 'grand_total' => 10000],
+            [['product_id' => $produk, 'qty' => 1, 'unit_price' => 10000]], // tanpa unit_cost
+        ));
+
+        $this->assertSame(ConsumeOutcome::Ack, $outcome);
+        $this->assertDatabaseHas('sales', ['order_id' => $orderId, 'cogs_total' => 0]);
+    }
 }

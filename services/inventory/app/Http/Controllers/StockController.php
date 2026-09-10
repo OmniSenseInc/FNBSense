@@ -28,68 +28,72 @@ class StockController extends Controller
     public function __construct(private readonly CatalogRecipeClient $catalog) {}
 
     /**
-     * Daftar saldo stok outlet ini.
+     * Daftar stok outlet ini: SEMUA bahan dari Catalog, lengkap dengan saldonya.
      *
-     * Balasannya daftar-izin, bukan model mentah. Endpoint ini dibaca KASIR
-     * juga, dan model mentah menerbitkan setiap kolom yang kelak ditambahkan
-     * ke tabel: begitu harga beli bahan masuk ke `stock_balances`, angka itu
-     * sampai ke layar kasir tanpa satu baris kode pun berubah dan tanpa satu
-     * tes pun jadi merah. `tenant_id`/`outlet_id` sengaja tak dikirim — kedua
-     * nilai itu berasal dari token si peminta, jadi mengembalikannya cuma
-     * memberi tahu dia apa yang sudah dia bawa.
+     * Sumber daftar adalah Catalog, bukan tabel saldo — bahan yang BELUM pernah
+     * distok (belum punya baris saldo) ikut tampil dengan saldo 0, supaya owner
+     * bisa restock dari sini. Sebelumnya bahan baru tak pernah muncul, dan karena
+     * tombol "Barang masuk" menempel pada baris yang ada, saldonya tak bisa diisi
+     * sama sekali (buntu).
+     *
+     * Balasannya daftar-izin, bukan model mentah. Endpoint ini dibaca KASIR juga,
+     * dan model mentah menerbitkan setiap kolom yang kelak ditambahkan ke tabel:
+     * begitu harga beli bahan masuk ke `stock_balances`, angka itu sampai ke layar
+     * kasir tanpa satu baris kode pun berubah. `tenant_id`/`outlet_id` sengaja tak
+     * dikirim — keduanya berasal dari token si peminta.
+     *
+     * Catalog mati TIDAK mematikan layar stok: fallback ke saldo yang sudah ada
+     * (nama null), sepola sebelum perubahan. Angka saldo ada di database ini dan
+     * tetap benar; yang hilang cuma nama dan bahan-baru-belum-distok.
      */
     public function index(Request $request): JsonResponse
     {
+        $tenantId = $this->tenantId($request);
+        $outletId = $this->outletId($request);
+
         $balances = StockBalance::query()
-            ->where('tenant_id', $this->tenantId($request))
-            ->where('outlet_id', $this->outletId($request))
-            ->orderBy('ingredient_id')
-            ->get();
+            ->where('tenant_id', $tenantId)
+            ->where('outlet_id', $outletId)
+            ->get()
+            ->keyBy('ingredient_id');
 
-        $nama = $this->namaBahan($this->tenantId($request), $balances->pluck('ingredient_id')->all());
-
-        return response()->json(['data' => $balances->map(fn (StockBalance $saldo) => [
-            'ingredient_id' => $saldo->ingredient_id,
-            // null bukan kelalaian: lihat namaBahan(). Layar wajib menyiapkan
-            // penggantinya, bukan menampilkan "null".
-            'ingredient_name' => $nama[$saldo->ingredient_id] ?? null,
-            'qty_on_hand' => $saldo->qty_on_hand,
-            'min_stock' => $saldo->min_stock,
-            'updated_at' => $saldo->updated_at,
-        ])->all()]);
-    }
-
-    /**
-     * Nama bahan dari Catalog — hiasan, bukan syarat.
-     *
-     * Nama tinggal di Catalog dan tabelnya owner-only, jadi Inventory yang
-     * mengambilnya lewat token service. Kasir tak pernah menyentuh Catalog:
-     * kalau ia boleh, harga beli yang kelak masuk ke tabel bahan ikut terbuka.
-     *
-     * Catalog mati TIDAK boleh mematikan layar stok. Angka saldo ada di
-     * database ini sendiri dan tetap benar; menolak seluruh permintaan cuma
-     * karena namanya tak terambil berarti kasir kehilangan informasi yang
-     * sebenarnya utuh di tangan kita. Jadi galatnya ditangkap, dicatat, dan
-     * setiap baris tetap keluar dengan ingredient_name null.
-     *
-     * @param  array<int, string>  $ingredientIds
-     * @return array<string, string>
-     */
-    private function namaBahan(string $tenantId, array $ingredientIds): array
-    {
         try {
-            return $this->catalog->ingredientNames($tenantId, array_values(array_unique($ingredientIds)));
+            $bahan = collect($this->catalog->ingredients($tenantId))->keyBy('id');
+            $pakaiSemua = true;
         } catch (CatalogUnavailableException $e) {
-            // Warning, bukan error: layarnya tetap berguna, dan menaikkannya ke
-            // error akan melatih mata mengabaikan error.
-            Log::warning('Nama bahan tak terambil dari Catalog; daftar stok tetap dikirim tanpa nama.', [
+            Log::warning('Daftar bahan tak terambil dari Catalog; hanya saldo yang sudah ada yang tampil.', [
                 'tenant_id' => $tenantId,
-                'jumlah_bahan' => count($ingredientIds),
                 'sebab' => $e->getMessage(),
             ]);
-
-            return [];
+            $bahan = collect();
+            $pakaiSemua = false;
         }
+
+        if ($pakaiSemua) {
+            $baris = $bahan->map(function (array $b) use ($balances) {
+                $saldo = $balances->get($b['id']);
+
+                return [
+                    'ingredient_id' => $b['id'],
+                    'ingredient_name' => $b['name'],
+                    // Bahan tanpa baris saldo = belum pernah distok = 0 (bukan
+                    // "tak diawasi"): konsisten dengan AvailabilityController.
+                    'qty_on_hand' => $saldo?->qty_on_hand ?? 0,
+                    'min_stock' => $saldo?->min_stock ?? 0,
+                    'updated_at' => $saldo?->updated_at ?? null,
+                ];
+            })->values()->all();
+        } else {
+            $baris = $balances->map(fn (StockBalance $saldo) => [
+                'ingredient_id' => $saldo->ingredient_id,
+                'ingredient_name' => null,
+                'qty_on_hand' => $saldo->qty_on_hand,
+                'min_stock' => $saldo->min_stock,
+                'updated_at' => $saldo->updated_at,
+            ])->values()->all();
+        }
+
+        return response()->json(['data' => $baris]);
     }
 
     /**

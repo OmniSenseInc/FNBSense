@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { bacaPesananSaya, catatPesanan, kunciPesanan } from './pesananSaya'
+import {
+  bacaPesananSaya,
+  buangPesananSelesai,
+  catatPesanan,
+  kosongkanPesananSaya,
+  kunciPesanan,
+} from './pesananSaya'
 
 /**
  * localStorage tiruan. Proyek ini tak memakai jsdom (test-nya murni fungsi),
@@ -13,6 +19,9 @@ beforeEach(() => {
     getItem: (k: string) => simpanan[k] ?? null,
     setItem: (k: string, v: string) => {
       simpanan[k] = v
+    },
+    removeItem: (k: string) => {
+      delete simpanan[k]
     },
   })
 })
@@ -104,5 +113,56 @@ describe('bacaPesananSaya', () => {
     expect(daftar).toHaveLength(10)
     expect(daftar[0].id).toBe('ord-11')
     expect(daftar.map((e) => e.id)).not.toContain('ord-0')
+  })
+})
+
+describe('kosongkanPesananSaya', () => {
+  it('menghapus seluruh daftar', () => {
+    catatPesanan(KUNCI, 'ord-a', SEKARANG)
+    kosongkanPesananSaya(KUNCI)
+
+    expect(bacaPesananSaya(KUNCI, SEKARANG)).toEqual([])
+  })
+
+  it('localStorage yang melempar tidak melempar', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('kuota penuh')
+      },
+      removeItem: () => {
+        throw new Error('kuota penuh')
+      },
+    })
+
+    expect(() => kosongkanPesananSaya(KUNCI)).not.toThrow()
+  })
+})
+
+describe('buangPesananSelesai', () => {
+  it('membuang hanya id yang disebut, sisanya selamat', () => {
+    catatPesanan(KUNCI, 'ord-selesai', SEJAM_LALU)
+    catatPesanan(KUNCI, 'ord-aktif', SEKARANG)
+
+    const sisa = buangPesananSelesai(KUNCI, ['ord-selesai'], SEKARANG)
+
+    expect(sisa.map((e) => e.id)).toEqual(['ord-aktif'])
+  })
+
+  it('id yang tak ada di daftar tidak berpengaruh', () => {
+    catatPesanan(KUNCI, 'ord-a', SEKARANG)
+
+    const sisa = buangPesananSelesai(KUNCI, ['ord-ghost'], SEKARANG)
+
+    expect(sisa.map((e) => e.id)).toEqual(['ord-a'])
+  })
+
+  it('hasilnya ikut tersimpan, bukan cuma dikembalikan', () => {
+    catatPesanan(KUNCI, 'ord-selesai', SEJAM_LALU)
+    catatPesanan(KUNCI, 'ord-aktif', SEKARANG)
+
+    buangPesananSelesai(KUNCI, ['ord-selesai'], SEKARANG)
+
+    expect(bacaPesananSaya(KUNCI, SEKARANG).map((e) => e.id)).toEqual(['ord-aktif'])
   })
 })

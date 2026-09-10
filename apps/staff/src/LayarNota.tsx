@@ -89,8 +89,8 @@ export default function LayarNota({ onKeluar }: { onKeluar: () => void }) {
 
   if (pesanan === null) {
     return (
-      <div className="min-h-svh bg-slate-100 text-slate-900">
-        <Kepala bisaCetak={false} />
+      <div className="min-h-svh bg-stone-100 text-stone-900">
+        <Kepala sudahBayar={false} bisaCetak={false} />
         <p role={galat ? 'alert' : undefined} className="px-4 py-16 text-center text-sm">
           {galat ?? 'Memuat nota…'}
         </p>
@@ -99,7 +99,7 @@ export default function LayarNota({ onKeluar }: { onKeluar: () => void }) {
   }
 
   return (
-    <div className="min-h-svh bg-slate-100 text-slate-900">
+    <div className="min-h-svh bg-stone-100 text-stone-900">
       {/* Lebar kertas struk yang lazim. Margin nol supaya tak ada tepi kosong
           yang membuang kertas, dan tinggi 'auto' karena struk memanjang sesuai
           jumlah item, bukan sebaliknya. */}
@@ -110,7 +110,7 @@ export default function LayarNota({ onKeluar }: { onKeluar: () => void }) {
         }
       `}</style>
 
-      <Kepala bisaCetak />
+      <Kepala sudahBayar={pesanan.waktuBayar !== null} bisaCetak />
 
       <main className="mx-auto my-6 w-[58mm] bg-white p-3 text-[11px] leading-snug text-black print:my-0 print:w-full print:p-2">
         <div className="text-center">
@@ -155,7 +155,18 @@ export default function LayarNota({ onKeluar }: { onKeluar: () => void }) {
         </ul>
 
         <div className="mt-2 border-t border-dashed border-black pt-2">
-          <Baris label="Subtotal" nilai={pesanan.subtotal} />
+          <Baris label="Subtotal" nilai={pesanan.grossSubtotal} />
+          {/* Potongan promo jadi baris tersendiri: "Subtotal" di atas adalah
+              angka KOTOR, dan baris ini yang menjelaskan selisihnya. Hilang
+              saat tak ada promo — beda dari layanan/pajak yang wajib tampil. */}
+          {/* Minus ditulis DI DEPAN "Rp", bukan lewat rupiah(-diskon): konsisten
+              dengan struk cetak ("-Rp 10.000"), bukan "Rp -10.000" yang janggal. */}
+          {pesanan.diskon > 0 && (
+            <div className="flex justify-between tabular-nums">
+              <span>{pesanan.promo ?? 'Diskon'}</span>
+              <span>-{rupiah(pesanan.diskon)}</span>
+            </div>
+          )}
           {/* Pajak & layanan SELALU ditulis walau nol: pungutan wajib yang tak
               tercantum bikin orang mengira ada yang disembunyikan. */}
           <Baris label="Layanan" nilai={pesanan.layanan} />
@@ -201,7 +212,7 @@ function Termal({ pesanan, setelan }: { pesanan: Pesanan; setelan: Setelan | nul
 
   if (rintangan === 'butuh-https') {
     return (
-      <p className="mx-auto w-[58mm] pb-8 text-center text-xs text-slate-500 print:hidden">
+      <p className="mx-auto w-[58mm] pb-8 text-center text-xs text-stone-500 print:hidden">
         Cetak langsung ke printer Bluetooth hanya bisa lewat alamat <b>https://</b>. Dari alamat ini,
         pakai tombol <b>Cetak</b> di atas.
       </p>
@@ -262,7 +273,7 @@ function Termal({ pesanan, setelan }: { pesanan: Pesanan; setelan: Setelan | nul
           type="button"
           disabled={sibuk}
           onClick={() => jalankan(() => sambung())}
-          className="w-full rounded-md border border-slate-400 px-4 py-3 text-sm font-semibold disabled:opacity-50"
+          className="w-full rounded-md border border-stone-400 px-4 py-3 text-sm font-semibold disabled:opacity-50"
         >
           {sibuk ? 'Menyambungkan…' : 'Sambungkan printer termal'}
         </button>
@@ -282,7 +293,7 @@ function Termal({ pesanan, setelan }: { pesanan: Pesanan; setelan: Setelan | nul
           type="button"
           disabled={sibuk}
           onClick={() => jalankan(() => sambung(true))}
-          className="mt-2 w-full text-center text-xs text-slate-500 underline disabled:opacity-50"
+          className="mt-2 w-full text-center text-xs text-stone-500 underline disabled:opacity-50"
         >
           Printer tidak muncul? Tampilkan semua perangkat
         </button>
@@ -295,21 +306,25 @@ function Termal({ pesanan, setelan }: { pesanan: Pesanan; setelan: Setelan | nul
  * Bar atas. Tombol cetak disembunyikan selama notanya belum ada — menawarkan
  * cetak untuk layar kosong cuma menghasilkan kertas kosong.
  */
-function Kepala({ bisaCetak }: { bisaCetak: boolean }) {
+function Kepala({ sudahBayar, bisaCetak }: { sudahBayar: boolean; bisaCetak: boolean }) {
+  // Nota yang baru dibuat (POS) belum tentu sudah dibayar — bukan bukti
+  // pembayaran sampai `waktuBayar` terisi.
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
+    <header className="flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 print:hidden">
       {/* Link, bukan tombol history.back(): nota bisa dibuka langsung dari
           alamatnya (cetak ulang, tab baru), dan di situ tak ada halaman
           sebelumnya untuk dikembalikan. */}
-      <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+      <Link to="/" className="rounded-md border border-stone-300 px-3 py-2 text-sm">
         ← Antrean
       </Link>
-      <p className="text-sm text-slate-600">Pembayaran tercatat</p>
+      <p className="text-sm text-stone-600">
+        {sudahBayar ? 'Pembayaran tercatat' : 'Menunggu pembayaran'}
+      </p>
       {bisaCetak ? (
         <button
           type="button"
           onClick={() => window.print()}
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+          className="rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white"
         >
           Cetak
         </button>

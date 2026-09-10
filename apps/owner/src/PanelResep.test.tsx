@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Bahan, BarisResep } from './api'
 import PanelResep from './PanelResep'
 
-const susu: Bahan = { id: 'b1', nama: 'Susu', satuan: 'ml' }
-const biji: Bahan = { id: 'b2', nama: 'Biji Kopi', satuan: 'g' }
+const susu: Bahan = { id: 'b1', nama: 'Susu', satuan: 'ml', hargaBeli: 0 }
+const biji: Bahan = { id: 'b2', nama: 'Biji Kopi', satuan: 'g', hargaBeli: 0 }
 const barisSusu: BarisResep = { id: 'r1', produkId: 'p1', bahanId: 'b1', takaran: 150 }
 
 function tampilkan(ubah: Partial<React.ComponentProps<typeof PanelResep>> = {}) {
@@ -17,6 +17,7 @@ function tampilkan(ubah: Partial<React.ComponentProps<typeof PanelResep>> = {}) 
     onTambah: vi.fn(),
     onUbah: vi.fn(),
     onHapus: vi.fn(),
+    onUbahHargaBeli: vi.fn(),
     ...ubah,
   }
   render(<PanelResep {...props} />)
@@ -142,5 +143,23 @@ describe('menghapus baris', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hapus Susu dari resep' }))
 
     expect(onHapus).toHaveBeenCalledWith('r1')
+  })
+})
+
+describe('harga beli bahan', () => {
+  it('bahan belum dihargai bisa diisi inline dari panel resep', () => {
+    const { onUbahHargaBeli } = tampilkan()
+
+    fireEvent.click(screen.getByText(/Harga beli belum diisi/))
+    fireEvent.change(screen.getByLabelText('Harga beli Susu'), { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan harga' }))
+
+    expect(onUbahHargaBeli).toHaveBeenCalledWith('b1', 20)
+  })
+
+  it('harga beli yang sudah ada ditampilkan apa adanya', () => {
+    tampilkan({ bahan: [{ ...susu, hargaBeli: 20 }] })
+
+    expect(screen.getByText(/Beli Rp 20\/ml/)).toBeTruthy()
   })
 })

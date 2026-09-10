@@ -18,15 +18,16 @@ class OrderCalculator
     /**
      * @param  array<int, array{product_id: string, qty: int, note?: string|null}>  $items
      * @param  array<string, array{name: string, price: mixed}>  $catalogProducts  peta dari CatalogClient
+     * @param  array<string, int>  $productCosts  peta product_id => unit_cost (HPP), opsional
      * @return array{
      *     gross_subtotal:int, discount_total:int, subtotal:int,
      *     service_charge:int, tax:int, grand_total:int, promotion:array|null,
-     *     items: array<int, array{product_id: string, product_name: string, unit_price: int, qty: int, line_total: int, note: string|null}>
+     *     items: array<int, array{product_id: string, product_name: string, unit_price: int, unit_cost: int, qty: int, line_total: int, note: string|null}>
      * }
      *
      * @throws ProductNotOrderableException Salah satu product_id tak ada di menu tenant.
      */
-    public function calculate(array $items, array $catalogProducts, OrderSetting $setting): array
+    public function calculate(array $items, array $catalogProducts, OrderSetting $setting, array $productCosts = []): array
     {
         $lines = [];
         $subtotal = 0;
@@ -54,6 +55,9 @@ class OrderCalculator
                 'unit_price' => $unitPrice,
                 'qty' => $qty,
                 'line_total' => $lineTotal,
+                // HPP per 1 produk, di-snapshot saat order dibuat. Tak pernah
+                // menyentuh total uang — murni untuk laporan laba-rugi.
+                'unit_cost' => (int) ($productCosts[$productId] ?? 0),
                 'note' => $item['note'] ?? null,
             ];
         }
