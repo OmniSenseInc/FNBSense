@@ -277,7 +277,7 @@ export default function LayarPromo({ onKeluar }: { onKeluar: () => void }) {
 
           <button
             onClick={simpan}
-            disabled={!formValid || menyimpan}
+            disabled={menyimpan}
             className="w-full py-2.5 rounded-xl bg-sage-600 text-white text-sm font-semibold disabled:opacity-40"
           >
             {menyimpan ? 'Menyimpan…' : 'Buat promo'}

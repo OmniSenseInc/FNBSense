@@ -30,6 +30,12 @@ def test_shift_buka_dan_tutup_selisih_nol(drv):
     drv.get(KASIR + "/shift")
     if "Dibuka" in drv.find_element("tag name", "body").text:
         pytest.skip("sudah ada shift berjalan")
+    # tunggu form muat — input lahir belakangan (SPA)
+    from selenium.webdriver.support.ui import WebDriverWait
+
+    WebDriverWait(drv, 12).until(
+        lambda x: len(x.find_elements("tag name", "input")) > 0
+    )
     # buka shift: modal 100.000 (input pertama)
     inp = drv.find_elements("tag name", "input")[0]
     from conftest import isi_kontrol_react
