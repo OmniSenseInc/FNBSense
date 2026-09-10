@@ -31,7 +31,8 @@ log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 # --- Cari sandi --------------------------------------------------------------
 # Target container = produksi: sandi dari .env.production.
 # Target lokal (dev): coba fnbsense_dev dulu, lalu sandi dari .env.production.
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'fnbsense-mysql'; then
+MYSQL_CONT="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(fnbsense-mysql|fnbsense-prod-mysql)$' | head -1 || true)"
+if [ -n "$MYSQL_CONT" ]; then
   ENV_FILE="/home/ubuntu/fnbsense/.env.production"
   [ -f "$ENV_FILE" ] && MYSQL_PASSWORD="$(grep '^MYSQL_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
 else
@@ -43,11 +44,11 @@ else
 fi
 
 # --- Deteksi target ----------------------------------------------------------
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'fnbsense-mysql'; then
-  log "Target: container fnbsense-mysql"
-  TARGET="container fnbsense-mysql"
-  exec_mysql()  { docker exec fnbsense-mysql mysql  -ufnbsense -p"$MYSQL_PASSWORD" -N -e "$1"; }
-  exec_dump()   { docker exec fnbsense-mysql mysqldump -ufnbsense -p"$MYSQL_PASSWORD" \
+if [ -n "$MYSQL_CONT" ]; then
+  log "Target: container $MYSQL_CONT"
+  TARGET="container $MYSQL_CONT"
+  exec_mysql()  { docker exec "$MYSQL_CONT" mysql  -ufnbsense -p"$MYSQL_PASSWORD" -N -e "$1"; }
+  exec_dump()   { docker exec "$MYSQL_CONT" mysqldump -ufnbsense -p"$MYSQL_PASSWORD" \
                     --single-transaction --routines --triggers --no-tablespaces --set-gtid-purged=OFF "$1"; }
 else
   log "Target: MySQL lokal"
