@@ -166,6 +166,45 @@ class ShiftTest extends TestCase
     }
 
     /**
+     * Penjualan di JEDA antar shift (shift lama sudah tutup, shift baru belum
+     * buka) tidak boleh hilang: ia diatribusikan ke shift BERIKUTNYA lewat
+     * window close-to-close. Uangnya nyata masuk laci yang dihitung saat shift
+     * berikut tutup, jadi masuk laporan shift itu.
+     */
+    public function test_laporan_menghitung_penjualan_jeda_antar_shift(): void
+    {
+        [$tenant, $outlet] = $this->ids();
+
+        $shift1 = Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 0, 'opened_at' => '2026-07-22 08:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 0, 'closed_at' => '2026-07-22 16:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+        $shift2 = Shift::create([
+            'tenant_id' => $tenant, 'outlet_id' => $outlet, 'opened_by' => (string) Str::uuid(),
+            'opening_cash' => 0, 'opened_at' => '2026-07-22 17:00:00',
+            'closed_by' => (string) Str::uuid(), 'closing_cash' => 20000, 'closed_at' => '2026-07-22 20:00:00',
+            'status' => 'closed', 'open_key' => null,
+        ]);
+
+        // Jeda 16:30 — di luar opened_at shift 2, TAPI di dalam window
+        // close-to-close shift 2 ([16:00, 20:00)).
+        $this->sale($tenant, $outlet, 20000, 'cash', '2026-07-22 16:30:00');
+        $this->sale($tenant, $outlet, 50000, 'cash', '2026-07-22 18:00:00');
+
+        $this->getJson("/api/shifts/{$shift2->id}", $this->authHeaders($tenant, $outlet, 'owner'))
+            ->assertOk()
+            ->assertJsonPath('data.report.cash_sales', 70000)   // 20k (jeda) + 50k
+            ->assertJsonPath('data.report.transactions', 2);
+
+        // Shift 1 (window [08:00, 16:00)) TIDAK mencuri penjualan jeda.
+        $this->getJson("/api/shifts/{$shift1->id}", $this->authHeaders($tenant, $outlet, 'owner'))
+            ->assertOk()
+            ->assertJsonPath('data.report.transactions', 0);
+    }
+
+    /**
      * `GET /shifts/current` — satu-satunya cara menemukan shift terbuka tanpa
      * menyimpan id di sisi klien. Belum ada shift = keadaan normal, bukan error.
      */

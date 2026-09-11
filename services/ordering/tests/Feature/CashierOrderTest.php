@@ -294,16 +294,18 @@ class CashierOrderTest extends TestCase
         $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'cancelled']);
     }
 
-    /** Order EXPIRED tak bisa dibayar -> 409. */
-    public function test_confirm_payment_order_expired_ditolak_409(): void
+    /** Order EXPIRED boleh dibayar: uang masuk di tengah kedaluwarsaan tak boleh nyangkut. */
+    public function test_confirm_payment_order_expired_boleh_dibayar(): void
     {
         $order = $this->makeOrder(OrderStatus::Expired);
 
         $this->withHeaders($this->cashierHeaders())
             ->postJson("/api/cashier/orders/{$order->id}/confirm-payment", ['payment_method' => 'cash'])
-            ->assertStatus(409);
+            ->assertOk()
+            ->assertJsonPath('data.status', 'paid');
 
-        $this->assertSame(0, Outbox::count());
+        $this->assertSame(1, Outbox::count());
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'paid']);
     }
 
     /** Order milik outlet lain -> 404 (bukan 403), tak berubah, tak ada outbox. */

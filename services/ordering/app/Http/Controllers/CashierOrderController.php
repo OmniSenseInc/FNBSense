@@ -157,8 +157,8 @@ class CashierOrderController extends Controller
     /**
      * Konfirmasi pembayaran: PENDING -> PAID + satu baris outbox, dalam SATU
      * transaksi. Idempoten: order yang sudah PAID membalas state sekarang tanpa
-     * menulis outbox kedua (pertahanan utama double-charge). CANCELLED/EXPIRED
-     * -> 409 (transisi tak sah).
+     * menulis outbox kedua (pertahanan utama double-charge). CANCELLED -> 409
+     * (transisi tak sah). EXPIRED tetap boleh dibayar kalau uang sungguh masuk.
      */
     public function confirmPayment(ConfirmPaymentRequest $request, string $id): JsonResponse
     {
@@ -187,8 +187,15 @@ class CashierOrderController extends Controller
                 return $order;
             }
 
-            // Hanya PENDING yang boleh menjadi PAID.
-            if ($order->status !== OrderStatus::Pending) {
+            // PENDING dan EXPIRED sama-sama boleh menjadi PAID. EXPIRED bukan
+            // pagar uang — ia cuma pembersih antrean pelanggan (order yang
+            // ditinggal tanpa bayar). Kalau uang sungguh masuk (kasir melihat
+            // mutasi QRIS-nya), penjualan itu WAJIB bisa dicatat: menolaknya di
+            // sini membuat duit nyangkut tanpa jalur pemulihan — stok tak
+            // terpotong, penjualan tak tercatat, dan owner tak akan tahu.
+            // CANCELLED tetap 409: order yang dibatalkan memang tak pernah
+            // dibayar, dan menghidupkannya kembali membohongi dapur.
+            if ($order->status !== OrderStatus::Pending && $order->status !== OrderStatus::Expired) {
                 throw new HttpException(409, 'Order tidak lagi bisa dibayar.');
             }
 

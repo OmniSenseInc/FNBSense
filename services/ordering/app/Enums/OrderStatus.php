@@ -11,5 +11,5 @@ enum OrderStatus: string
     case Pending = 'pending';       // baru dibuat, menunggu bayar di kasir
     case Paid = 'paid';             // sudah dibayar — terminal, uang masuk
     case Cancelled = 'cancelled';   // dibatalkan kasir
-    case Expired = 'expired';       // kedaluwarsa (scheduler), tak jadi dibayar
+    case Expired = 'expired';       // kedaluwarsa (scheduler) — bisa tetap dibayar kalau uang masuk
 }

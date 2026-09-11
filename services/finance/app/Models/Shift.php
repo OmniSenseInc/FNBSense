@@ -69,16 +69,25 @@ class Shift extends Model
      * tersimpan. Shift masih open → window sampai now() (X-report berjalan);
      * sudah closed → sampai closed_at (Z-report final).
      *
+     * Batas bawah window = jam TUTUP shift SEBELUMNYA (bukan opened_at sendiri).
+     * Tanpa ini, penjualan yang dikonfirmasi di JEDA antar shift — setelah shift
+     * lama ditutup, sebelum shift baru dibuka — jatuh di luar window semua shift
+     * dan uangnya hilang dari audit kas. Dengan batas "close-to-close", window
+     * shift bersambung rapat: [tutup_sebelumnya, tutup_sendiri), tak ada celah
+     * tempat uang bisa jatuh. Penjualan jeda diatribusikan ke shift BERIKUTNYA
+     * (uangnya memang masuk laci yang dihitung saat shift berikut tutup).
+     *
      * @return array<string, mixed>
      */
     public function financialReport(): array
     {
         $upperBound = $this->closed_at ?? Carbon::now();
+        $lowerBound = $this->previousClosedAt() ?? $this->opened_at;
 
         $sales = Sale::query()
             ->where('tenant_id', $this->tenant_id)
             ->where('outlet_id', $this->outlet_id)
-            ->where('paid_at', '>=', $this->opened_at)
+            ->where('paid_at', '>=', $lowerBound)
             ->where('paid_at', '<', $upperBound);
 
         $totalSales = (int) (clone $sales)->sum('grand_total');
@@ -103,7 +112,24 @@ class Shift extends Model
             'expected_cash' => $expectedCash,
             'counted_cash' => $countedCash,
             'cash_variance' => $variance,
-            'window' => ['from' => $this->opened_at, 'to' => $this->closed_at],
+            'window' => ['from' => $lowerBound, 'to' => $this->closed_at],
         ];
+    }
+
+    /**
+     * Jam tutup shift TERAKHIR yang dibuka sebelum shift ini (null kalau ini
+     * shift pertama outlet). Nilai kembali Carbon (cast datetime), konsisten
+     * dengan $this->opened_at supaya perbandingan waktu di query seragam.
+     */
+    private function previousClosedAt(): ?Carbon
+    {
+        $previous = Shift::query()
+            ->where('tenant_id', $this->tenant_id)
+            ->where('outlet_id', $this->outlet_id)
+            ->where('opened_at', '<', $this->opened_at)
+            ->orderByDesc('opened_at')
+            ->first(['id', 'closed_at']);
+
+        return $previous?->closed_at;
     }
 }
