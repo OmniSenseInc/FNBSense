@@ -16,15 +16,9 @@
 # layar /shift, "kafe bisa berjualan tanpanya" berhenti benar — tanpa Finance
 # tak ada yang membuka atau menutup laci.
 
-# Nama project dipaku `fnbsense-prod` (bukan nama direktori `fnbsense`) supaya
-# container, volume, dan jaringan yang benar-benar jalan di produksi tetap
-# ketemu tiap `docker compose` dijalankan TANPA flag `-p`. Tanpa ini,
-# `docker compose ps` kosong dan `up` membangun tumpukan paralel baru.
-name: fnbsense-prod
-
 networks:
   fnbsense:
-    name: fnbsense-prod
+    name: fnbsense
     driver: bridge
 
 volumes:
@@ -124,7 +118,7 @@ services:
     # lewat socket yang sama. Yang tak cocok versi klien Docker di dalam
     # Traefik lama terhadap engine baru.
     image: traefik:v3.6
-    container_name: fnbsense-prod-gateway
+    container_name: fnbsense-gateway
     restart: unless-stopped
     command:
       - "--providers.docker=true"
@@ -169,7 +163,7 @@ services:
   # -------------------------------------------------------------------------
   mysql:
     image: mysql:8.4
-    container_name: fnbsense-prod-mysql
+    container_name: fnbsense-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD wajib diisi}
@@ -192,7 +186,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:4-management
-    container_name: fnbsense-prod-rabbitmq
+    container_name: fnbsense-rabbitmq
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fnbsense}
@@ -208,7 +202,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: fnbsense-prod-redis
+    container_name: fnbsense-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -236,7 +230,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/iam
-    container_name: fnbsense-prod-iam
+    container_name: fnbsense-iam
     restart: unless-stopped
     environment:
       <<: *laravel-env
@@ -268,7 +262,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/catalog
-    container_name: fnbsense-prod-catalog
+    container_name: fnbsense-catalog
     restart: unless-stopped
     environment:
       <<: *laravel-env
@@ -343,7 +337,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/ordering
-    container_name: fnbsense-prod-ordering
+    container_name: fnbsense-ordering
     restart: unless-stopped
     environment: &ordering-env
       <<: *laravel-env
@@ -398,7 +392,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/inventory
-    container_name: fnbsense-prod-inventory
+    container_name: fnbsense-inventory
     restart: unless-stopped
     environment: &inventory-env
       <<: *laravel-env
@@ -437,7 +431,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/notification
-    container_name: fnbsense-prod-notification
+    container_name: fnbsense-notification
     restart: unless-stopped
     environment: &notification-env
       <<: *laravel-env
@@ -480,7 +474,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/finance
-    container_name: fnbsense-prod-finance
+    container_name: fnbsense-finance
     restart: unless-stopped
     environment: &finance-env
       <<: *laravel-env
@@ -523,7 +517,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/ordering
-    container_name: fnbsense-prod-ordering-relay
+    container_name: fnbsense-ordering-relay
     restart: unless-stopped
     command: ["php", "artisan", "outbox:relay"]
     environment: *ordering-env
@@ -536,7 +530,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/ordering
-    container_name: fnbsense-prod-ordering-schedule
+    container_name: fnbsense-ordering-schedule
     restart: unless-stopped
     command: ["php", "artisan", "schedule:work"]
     environment: *ordering-env
@@ -549,7 +543,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/inventory
-    container_name: fnbsense-prod-inventory-consume
+    container_name: fnbsense-inventory-consume
     restart: unless-stopped
     command: ["php", "artisan", "inventory:consume"]
     environment: *inventory-env
@@ -562,7 +556,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/notification
-    container_name: fnbsense-prod-notification-consume
+    container_name: fnbsense-notification-consume
     restart: unless-stopped
     command: ["php", "artisan", "notification:consume"]
     environment: *notification-env
@@ -579,7 +573,7 @@ services:
     build:
       <<: *laravel-build
       context: ./services/finance
-    container_name: fnbsense-prod-finance-consume
+    container_name: fnbsense-finance-consume
     restart: unless-stopped
     command: ["php", "artisan", "finance:consume"]
     environment: *finance-env
@@ -602,7 +596,7 @@ services:
         VITE_ORDERING_URL: /ordering
         VITE_CATALOG_URL: /catalog
         VITE_NAMA_KAFE: ${NAMA_KAFE:-Kafe}
-    container_name: fnbsense-prod-app-customer
+    container_name: fnbsense-app-customer
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
@@ -630,7 +624,7 @@ services:
         # kasir, dan pelanggan mendarat di halaman login.
         VITE_CUSTOMER_URL: https://${DOMAIN_CUSTOMER}
         VITE_NAMA_KAFE: ${NAMA_KAFE:-Kafe}
-    container_name: fnbsense-prod-app-staff
+    container_name: fnbsense-app-staff
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
@@ -661,7 +655,7 @@ services:
         # Layar pengaturan (QRIS/QR meja) tetap butuh alamat pelanggan.
         VITE_CUSTOMER_URL: https://${DOMAIN_CUSTOMER}
         VITE_NAMA_KAFE: ${NAMA_KAFE:-Kafe}
-    container_name: fnbsense-prod-app-owner
+    container_name: fnbsense-app-owner
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
